@@ -1,0 +1,22 @@
+node_modules/
+dist/
+build/
+.next/
+.turbo/
+.expo/
+coverage/
+
+# env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# prisma
+prisma/*.db
+
+# os / editor
+.DS_Store
+Thumbs.db
+*.log
+.qodo/

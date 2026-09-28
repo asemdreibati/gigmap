@@ -1,0 +1,23 @@
+{
+  "name": "gigmap",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.12.3",
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "db:migrate": "pnpm --filter @gigmap/api exec prisma migrate dev",
+    "db:deploy": "pnpm --filter @gigmap/api exec prisma migrate deploy",
+    "db:generate": "pnpm --filter @gigmap/api exec prisma generate",
+    "db:studio": "pnpm --filter @gigmap/api exec prisma studio"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  }
+}

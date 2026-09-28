@@ -1,0 +1,211 @@
+// GigMap data model.
+//
+// PostGIS note: `Job.location` is a geography column Prisma cannot read or
+// write (`Unsupported`). It is maintained by a BEFORE INSERT/UPDATE trigger
+// from `latitude`/`longitude`, which Prisma *does* own. So application code
+// only ever writes lat/lng, and the geo index stays correct for free.
+// Radius search runs through a raw query in JobsService.
+//
+// When changing this file, use `prisma migrate dev --create-only` and check
+// the generated SQL before applying — Prisma does not know about the trigger,
+// the GiST index, or the extension.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  worker
+  employer
+}
+
+enum JobStatus {
+  open
+  filled
+  expired
+  cancelled
+}
+
+enum ApplicationStatus {
+  pending
+  accepted
+  rejected
+}
+
+enum PayType {
+  hourly
+  fixed
+}
+
+enum JobCategory {
+  delivery
+  hospitality
+  events
+  cleaning
+  warehouse
+  retail
+  admin
+  construction
+  other
+}
+
+enum ReportTargetType {
+  job
+  user
+}
+
+enum PushPlatform {
+  ios
+  android
+  web
+}
+
+/// Mirrors auth.users. `id` is the Supabase auth user id — the API never
+/// mints its own user ids, so a row here always corresponds to a real
+/// authenticated identity.
+model User {
+  id          String   @id @db.Uuid
+  email       String   @unique
+  role        UserRole
+  name        String
+  photoUrl    String?  @map("photo_url")
+  phone       String?
+  bio         String?
+  avgRating   Decimal  @default(0) @map("avg_rating") @db.Decimal(2, 1)
+  ratingCount Int      @default(0) @map("rating_count")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workerProfile   WorkerProfile?
+  employerProfile EmployerProfile?
+  jobs            Job[]            @relation("EmployerJobs")
+  applications    Application[]
+  ratingsGiven    Rating[]         @relation("RatingsGiven")
+  ratingsReceived Rating[]         @relation("RatingsReceived")
+  reportsFiled    Report[]         @relation("ReportsFiled")
+  pushTokens      PushToken[]
+
+  @@map("users")
+}
+
+model WorkerProfile {
+  id              String   @id @db.Uuid
+  skills          String[] @default([])
+  experienceYears Int      @default(0) @map("experience_years")
+
+  user User @relation(fields: [id], references: [id], onDelete: Cascade)
+
+  @@map("worker_profiles")
+}
+
+model EmployerProfile {
+  id          String  @id @db.Uuid
+  companyName String? @map("company_name")
+  website     String?
+
+  user User @relation(fields: [id], references: [id], onDelete: Cascade)
+
+  @@map("employer_profiles")
+}
+
+model Job {
+  id            String      @id @default(uuid()) @db.Uuid
+  employerId    String      @map("employer_id") @db.Uuid
+  title         String
+  description   String
+  category      JobCategory
+  payAmount     Decimal     @map("pay_amount") @db.Decimal(10, 2)
+  payType       PayType     @map("pay_type")
+  slots         Int         @default(1)
+  /// Accepted applications so far. Kept in step with `applications` inside the
+  /// accept transaction — never derive it client-side.
+  filledSlots   Int         @default(0) @map("filled_slots")
+  latitude      Float
+  longitude     Float
+  /// Derived from latitude/longitude by trigger. Not readable via Prisma Client.
+  location      Unsupported("geography(Point, 4326)")?
+  address       String
+  startTime     DateTime    @map("start_time") @db.Timestamptz(6)
+  durationHours Decimal?    @map("duration_hours") @db.Decimal(4, 1)
+  status        JobStatus   @default(open)
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt     DateTime    @map("expires_at") @db.Timestamptz(6)
+
+  employer     User          @relation("EmployerJobs", fields: [employerId], references: [id], onDelete: Cascade)
+  applications Application[]
+  ratings      Rating[]
+
+  @@index([status])
+  @@index([employerId])
+  @@index([expiresAt])
+  @@map("jobs")
+}
+
+model Application {
+  id        String            @id @default(uuid()) @db.Uuid
+  jobId     String            @map("job_id") @db.Uuid
+  workerId  String            @map("worker_id") @db.Uuid
+  status    ApplicationStatus @default(pending)
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  job    Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  worker User @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, workerId])
+  @@index([workerId, status])
+  @@map("applications")
+}
+
+model Rating {
+  id        String   @id @default(uuid()) @db.Uuid
+  jobId     String   @map("job_id") @db.Uuid
+  raterId   String   @map("rater_id") @db.Uuid
+  ratedId   String   @map("rated_id") @db.Uuid
+  stars     Int
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  job   Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  rater User @relation("RatingsGiven", fields: [raterId], references: [id], onDelete: Cascade)
+  rated User @relation("RatingsReceived", fields: [ratedId], references: [id], onDelete: Cascade)
+
+  // Not (jobId, raterId): a job with several slots has several hires, and the
+  // employer must be able to rate each of them.
+  @@unique([jobId, raterId, ratedId])
+  @@index([ratedId])
+  @@map("ratings")
+}
+
+model Report {
+  id         String           @id @default(uuid()) @db.Uuid
+  reporterId String           @map("reporter_id") @db.Uuid
+  targetType ReportTargetType @map("target_type")
+  targetId   String           @map("target_id") @db.Uuid
+  reason     String
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  reporter User @relation("ReportsFiled", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@index([targetType, targetId])
+  @@map("reports")
+}
+
+/// Expo push tokens. A user can have several (phone + tablet), and tokens
+/// rotate, so they are stored per-device and pruned when Expo reports them
+/// as unregistered.
+model PushToken {
+  token     String       @id
+  userId    String       @map("user_id") @db.Uuid
+  platform  PushPlatform
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_tokens")
+}
