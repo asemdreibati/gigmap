@@ -13,6 +13,7 @@ import { toJob, toPublicUser, userProfileInclude } from '../../common/mappers';
 import { isAcceptingWorkers, isFull, statusAfterHeadcountChange } from '../jobs/job-lifecycle';
 import { lockJob, requireOwnedJob } from '../jobs/job-lock';
 import { NotificationsService } from '../notifications/notifications.service';
+import { rejectPendingApplications, type ClosedApplication } from './application-closure';
 
 @Injectable()
 export class ApplicationsService {
@@ -22,47 +23,38 @@ export class ApplicationsService {
   ) {}
 
   async apply(workerId: string, jobId: string): Promise<Application> {
-    const job = await this.prisma.job.findUnique({
-      where: { id: jobId },
-      select: {
-        id: true,
-        employerId: true,
-        title: true,
-        slots: true,
-        filledSlots: true,
-        status: true,
-        expiresAt: true,
-      },
+    const { application, job } = await this.prisma.$transaction(async (tx) => {
+      // A share lock: applications to the same job do not wait on each other,
+      // but one cannot land after a concurrent close has swept the pending
+      // applications — it waits for the close, then sees the job closed.
+      const job = await lockJob(tx, jobId, 'share');
+
+      if (!job) {
+        throw new NotFoundException('Job not found');
+      }
+
+      if (!isAcceptingWorkers(job)) {
+        throw isFull(job)
+          ? new ConflictException('All positions for this job have been filled')
+          : new BadRequestException('This job is no longer accepting applications');
+      }
+
+      try {
+        const application = await tx.application.create({ data: { jobId, workerId } });
+        return { application, job };
+      } catch (error) {
+        // Racing double-taps on the Apply button land here via the
+        // (job_id, worker_id) unique index.
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+          throw new ConflictException('You have already applied for this job');
+        }
+        throw error;
+      }
     });
 
-    if (!job) {
-      throw new NotFoundException('Job not found');
-    }
+    this.notifications.newApplication(job.employerId, job.id, job.title);
 
-    if (job.status !== 'open' || job.expiresAt <= new Date()) {
-      throw new BadRequestException('This job is no longer accepting applications');
-    }
-
-    if (job.filledSlots >= job.slots) {
-      throw new ConflictException('All positions for this job have been filled');
-    }
-
-    try {
-      const application = await this.prisma.application.create({
-        data: { jobId, workerId },
-      });
-
-      this.notifications.newApplication(job.employerId, job.id, job.title);
-
-      return toApplication(application);
-    } catch (error) {
-      // Racing double-taps on the Apply button land here via the
-      // (job_id, worker_id) unique index.
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new ConflictException('You have already applied for this job');
-      }
-      throw error;
-    }
+    return toApplication(application);
   }
 
   /** The worker's "My Applications" screen. */
@@ -155,7 +147,7 @@ export class ApplicationsService {
       }
 
       if (application.status === input.status) {
-        return { application, job, changed: false } as const;
+        return { application, job, changed: false, closed: [] } as const;
       }
 
       // +1 when a slot is taken, -1 when an acceptance is withdrawn.
@@ -174,18 +166,25 @@ export class ApplicationsService {
         include: { worker: { include: userProfileInclude } },
       });
 
+      let closed: ClosedApplication[] = [];
+
       if (delta !== 0) {
         const filledSlots = job.filledSlots + delta;
-        await tx.job.update({
-          where: { id: job.id },
-          data: { filledSlots, status: statusAfterHeadcountChange(job, filledSlots) },
-        });
+        const status = statusAfterHeadcountChange(job, filledSlots);
+
+        await tx.job.update({ where: { id: job.id }, data: { filledSlots, status } });
+
+        if (job.status === 'open' && status === 'filled') {
+          closed = await rejectPendingApplications(tx, [job.id]);
+        }
       }
 
-      return { application: updated, job, changed: true } as const;
+      return { application: updated, job, changed: true, closed } as const;
     });
 
     if (result.changed) {
+      this.notifications.applicationsClosed(result.closed, 'filled');
+
       const employer = await this.prisma.user.findUniqueOrThrow({
         where: { id: employerId },
         select: { name: true },

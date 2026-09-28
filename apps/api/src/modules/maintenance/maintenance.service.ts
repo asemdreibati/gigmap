@@ -1,9 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { DEFAULT_TIMEZONE } from '@gigmap/shared';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { rejectPendingApplications } from '../applications/application-closure';
 import { NotificationsService } from '../notifications/notifications.service';
-import { DEFAULT_TIMEZONE } from '@gigmap/shared';
 
 /**
  * Scheduled work that used to need pg_cron. Running it in-process keeps it in
@@ -22,18 +23,35 @@ export class MaintenanceService {
   ) {}
 
   /**
-   * The map query already filters on `expires_at`, so this is about the
-   * employer's "My Jobs" list showing an honest status.
+   * The map query already filters on `expires_at`, so jobs vanish from the
+   * map on time regardless. This makes the status honest for the employer's
+   * "My Jobs" list, and closes the applications still waiting on a decision
+   * so workers are not left pending forever.
    */
   @Cron(CronExpression.EVERY_HOUR)
   async expireStaleJobs(): Promise<void> {
-    const { count } = await this.prisma.job.updateMany({
-      where: { status: 'open', expiresAt: { lte: new Date() } },
-      data: { status: 'expired' },
+    const { expired, closed } = await this.prisma.$transaction(async (tx) => {
+      // One statement, so it takes the same row locks as accept/reject and
+      // cannot expire a job an employer is filling at this moment.
+      const expired = await tx.$queryRaw<{ id: string }[]>`
+        UPDATE "jobs"
+        SET "status" = 'expired'
+        WHERE "status" = 'open' AND "expires_at" <= NOW()
+        RETURNING "id"
+      `;
+
+      const closed = await rejectPendingApplications(
+        tx,
+        expired.map(({ id }) => id),
+      );
+
+      return { expired, closed };
     });
 
-    if (count > 0) {
-      this.logger.log(`Expired ${count} job(s)`);
+    this.notifications.applicationsClosed(closed, 'expired');
+
+    if (expired.length > 0) {
+      this.logger.log(`Expired ${expired.length} job(s), closed ${closed.length} application(s)`);
     }
   }
 

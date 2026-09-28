@@ -1,6 +1,16 @@
 import { Injectable } from '@nestjs/common';
 
+import type { ClosedApplication } from '../applications/application-closure';
 import { PushService } from './push.service';
+
+/** Why a job stopped taking applications. */
+export type JobClosure = 'filled' | 'expired' | 'cancelled';
+
+const CLOSURE_MESSAGES: Record<JobClosure, { title: string; body: (job: string) => string }> = {
+  filled: { title: 'Position filled', body: (job) => `${job} has been filled` },
+  expired: { title: 'Job closed', body: (job) => `${job} is no longer taking applications` },
+  cancelled: { title: 'Job cancelled', body: (job) => `${job} was cancelled by the employer` },
+};
 
 /**
  * The notification events from the PRD, in one place, so the wording of a
@@ -38,6 +48,28 @@ export class NotificationsService {
       title: 'Application update',
       body: `Update on your application for ${jobTitle}`,
       data: { type: 'application.rejected', jobId },
+    });
+  }
+
+  /** Tells applicants still waiting on a decision that the job closed. */
+  applicationsClosed(closed: ClosedApplication[], reason: JobClosure): void {
+    const message = CLOSURE_MESSAGES[reason];
+
+    for (const { workerId, jobId, jobTitle } of closed) {
+      void this.push.sendToUser(workerId, {
+        title: message.title,
+        body: message.body(jobTitle),
+        data: { type: 'application.closed', reason, jobId },
+      });
+    }
+  }
+
+  /** Tells a worker who was hired that the job is off. */
+  hiredJobCancelled(workerId: string, jobId: string, jobTitle: string): void {
+    void this.push.sendToUser(workerId, {
+      title: 'Job cancelled',
+      body: `${jobTitle} was cancelled by the employer`,
+      data: { type: 'job.cancelled', jobId },
     });
   }
 

@@ -15,6 +15,8 @@ import {
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { toJob, userProfileInclude } from '../../common/mappers';
+import { rejectPendingApplications } from '../applications/application-closure';
+import { NotificationsService } from '../notifications/notifications.service';
 import { isFull, manualTransitionError } from './job-lifecycle';
 import { lockJob, requireOwnedJob } from './job-lock';
 
@@ -54,7 +56,10 @@ const jobWithEmployer = {
 
 @Injectable()
 export class JobsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   /**
    * The map and list views both read from here.
@@ -154,7 +159,7 @@ export class JobsService {
   }
 
   async update(employerId: string, id: string, input: UpdateJobInput): Promise<Job> {
-    await this.prisma.$transaction(async (tx) => {
+    const closed = await this.prisma.$transaction(async (tx) => {
       // Locked so a concurrent acceptance cannot change `filled_slots`
       // between the check below and the write.
       const job = requireOwnedJob(await lockJob(tx, id, 'update'), employerId);
@@ -170,23 +175,29 @@ export class JobsService {
         );
       }
 
+      // Shrinking the headcount to what is already hired fills the job,
+      // exactly as accepting the last applicant would have.
+      const fills = isFull({ slots, filledSlots: job.filledSlots });
+
       await tx.job.update({
         where: { id },
         data: {
           ...input,
           ...(input.startTime ? { expiresAt: defaultExpiry(input.startTime) } : {}),
-          // Shrinking the headcount to what is already hired fills the job,
-          // exactly as accepting the last applicant would have.
-          ...(isFull({ slots, filledSlots: job.filledSlots }) ? { status: 'filled' as const } : {}),
+          ...(fills ? { status: 'filled' as const } : {}),
         },
       });
+
+      return fills ? rejectPendingApplications(tx, [id]) : [];
     });
+
+    this.notifications.applicationsClosed(closed, 'filled');
 
     return this.findOne(id);
   }
 
   async updateStatus(employerId: string, id: string, input: UpdateJobStatusInput): Promise<Job> {
-    await this.prisma.$transaction(async (tx) => {
+    const outcome = await this.prisma.$transaction(async (tx) => {
       const job = requireOwnedJob(await lockJob(tx, id, 'update'), employerId);
 
       const error = manualTransitionError(job.status, input.status);
@@ -194,10 +205,29 @@ export class JobsService {
         throw new BadRequestException(error);
       }
 
-      if (job.status !== input.status) {
-        await tx.job.update({ where: { id }, data: { status: input.status } });
+      if (job.status === input.status) {
+        return null;
       }
+
+      await tx.job.update({ where: { id }, data: { status: input.status } });
+
+      const hired =
+        input.status === 'cancelled'
+          ? await tx.application.findMany({
+              where: { jobId: id, status: 'accepted' },
+              select: { workerId: true },
+            })
+          : [];
+
+      return { job, hired, closed: await rejectPendingApplications(tx, [id]) };
     });
+
+    if (outcome) {
+      this.notifications.applicationsClosed(outcome.closed, input.status);
+      for (const { workerId } of outcome.hired) {
+        this.notifications.hiredJobCancelled(workerId, id, outcome.job.title);
+      }
+    }
 
     return this.findOne(id);
   }
