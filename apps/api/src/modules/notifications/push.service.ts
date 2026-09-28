@@ -1,6 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Expo, type ExpoPushMessage, type ExpoPushTicket } from 'expo-server-sdk';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import {
+  Expo,
+  type ExpoPushMessage,
+  type ExpoPushReceipt,
+  type ExpoPushTicket,
+} from 'expo-server-sdk';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import type { Env } from '../../config/env';
@@ -12,10 +18,28 @@ export interface PushPayload {
   data?: Record<string, string>;
 }
 
+/** Expo asks senders to wait this long before fetching a ticket's receipt. */
+export const RECEIPT_DELAY_MS = 15 * 60 * 1000;
+/** Expo discards receipts after a day; past that there is nothing to fetch. */
+export const RECEIPT_TTL_MS = 24 * 60 * 60 * 1000;
+/** Bounds memory if Expo is unreachable for a long stretch. */
+export const MAX_PENDING_RECEIPTS = 10_000;
+
+interface PendingReceipt {
+  token: string;
+  sentAt: number;
+}
+
 @Injectable()
 export class PushService {
   private readonly logger = new Logger(PushService.name);
   private readonly expo: Expo;
+  /**
+   * Tickets awaiting a receipt check, keyed by ticket id, oldest first. Kept
+   * in memory: losing them on a restart only delays pruning a dead token
+   * until the next push to it. See ADR 0008.
+   */
+  private readonly pendingReceipts = new Map<string, PendingReceipt>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -53,7 +77,7 @@ export class PushService {
 
       for (const chunk of this.expo.chunkPushNotifications(messages)) {
         const tickets = await this.expo.sendPushNotificationsAsync(chunk);
-        await this.pruneDeadTokens(chunk, tickets);
+        await this.handleTickets(chunk, tickets);
       }
     } catch (error) {
       this.logger.error(
@@ -64,32 +88,98 @@ export class PushService {
   }
 
   /**
-   * Expo returns one ticket per message, in order. A `DeviceNotRegistered`
-   * error means the app was uninstalled or the token rotated — keeping it
-   * would mean retrying a dead token on every future notification.
+   * Second half of Expo's delivery protocol. A ticket only says Expo accepted
+   * the message; the receipt says whether Apple or Google delivered it, and
+   * it is where most `DeviceNotRegistered` errors (app uninstalled) show up.
    */
-  private async pruneDeadTokens(
-    chunk: ExpoPushMessage[],
-    tickets: ExpoPushTicket[],
-  ): Promise<void> {
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async checkReceipts(): Promise<void> {
+    const now = Date.now();
+    const due: string[] = [];
+
+    for (const [ticketId, { sentAt }] of this.pendingReceipts) {
+      if (now - sentAt > RECEIPT_TTL_MS) {
+        this.pendingReceipts.delete(ticketId);
+      } else if (now - sentAt >= RECEIPT_DELAY_MS) {
+        due.push(ticketId);
+      }
+    }
+
+    for (const chunk of this.expo.chunkPushNotificationReceiptIds(due)) {
+      try {
+        const receipts = await this.expo.getPushNotificationReceiptsAsync(chunk);
+        await this.handleReceipts(receipts);
+      } catch (error) {
+        // Left pending; the next run retries until the TTL runs out.
+        this.logger.warn(`Fetching push receipts failed: ${(error as Error).message}`);
+      }
+    }
+  }
+
+  /** Expo returns one ticket per message, in order. */
+  private async handleTickets(chunk: ExpoPushMessage[], tickets: ExpoPushTicket[]): Promise<void> {
     const stale: string[] = [];
 
     tickets.forEach((ticket, index) => {
-      if (ticket.status !== 'error') {
+      const recipient = chunk[index]?.to;
+      if (typeof recipient !== 'string') {
         return;
       }
 
-      const recipient = chunk[index]?.to;
-      if (ticket.details?.error === 'DeviceNotRegistered' && typeof recipient === 'string') {
+      if (ticket.status === 'ok') {
+        this.trackReceipt(ticket.id, recipient);
+      } else if (ticket.details?.error === 'DeviceNotRegistered') {
         stale.push(recipient);
       } else {
         this.logger.warn(`Push ticket error: ${ticket.message}`);
       }
     });
 
-    if (stale.length > 0) {
-      await this.prisma.pushToken.deleteMany({ where: { token: { in: stale } } });
-      this.logger.log(`Pruned ${stale.length} unregistered push token(s)`);
+    await this.deleteTokens(stale);
+  }
+
+  private async handleReceipts(receipts: Record<string, ExpoPushReceipt>): Promise<void> {
+    const stale: string[] = [];
+
+    for (const [ticketId, receipt] of Object.entries(receipts)) {
+      const pending = this.pendingReceipts.get(ticketId);
+      this.pendingReceipts.delete(ticketId);
+
+      if (receipt.status === 'ok' || !pending) {
+        continue;
+      }
+
+      if (receipt.details?.error === 'DeviceNotRegistered') {
+        stale.push(pending.token);
+      } else {
+        this.logger.warn(`Push receipt error: ${receipt.message}`);
+      }
     }
+
+    await this.deleteTokens(stale);
+  }
+
+  private trackReceipt(ticketId: string, token: string): void {
+    if (this.pendingReceipts.size >= MAX_PENDING_RECEIPTS) {
+      const oldest = this.pendingReceipts.keys().next();
+      if (!oldest.done) {
+        this.pendingReceipts.delete(oldest.value);
+      }
+    }
+    this.pendingReceipts.set(ticketId, { token, sentAt: Date.now() });
+  }
+
+  /**
+   * A `DeviceNotRegistered` token belongs to an uninstalled app or has been
+   * rotated. Keeping it would mean retrying a dead token on every future
+   * notification.
+   */
+  private async deleteTokens(tokens: string[]): Promise<void> {
+    if (tokens.length === 0) {
+      return;
+    }
+
+    await this.prisma.pushToken.deleteMany({ where: { token: { in: tokens } } });
+    this.logger.log(`Pruned ${tokens.length} unregistered push token(s)`);
   }
 }
