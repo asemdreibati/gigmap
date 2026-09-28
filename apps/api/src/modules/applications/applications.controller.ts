@@ -10,6 +10,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   listApplicationsQuerySchema,
   updateApplicationSchema,
@@ -19,6 +20,7 @@ import {
 } from '@gigmap/shared';
 
 import { CurrentUser, Roles } from '../../common/decorators';
+import { RATE_LIMITS } from '../../config/rate-limits';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { ApplicationsService } from './applications.service';
 
@@ -55,6 +57,7 @@ export class JobApplicationsController {
   @Post()
   @Roles('worker')
   @HttpCode(HttpStatus.CREATED)
+  @Throttle({ default: RATE_LIMITS.apply })
   apply(
     @CurrentUser('id') workerId: string,
     @Param('jobId', ParseUUIDPipe) jobId: string,

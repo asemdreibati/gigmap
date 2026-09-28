@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   createJobSchema,
   nearbyJobsQuerySchema,
@@ -13,6 +14,7 @@ import {
 } from '@gigmap/shared';
 
 import { CurrentUser, Roles } from '../../common/decorators';
+import { RATE_LIMITS } from '../../config/rate-limits';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { JobsService } from './jobs.service';
 
@@ -42,6 +44,7 @@ export class JobsController {
 
   @Post()
   @Roles('employer')
+  @Throttle({ default: RATE_LIMITS.postJob })
   create(
     @CurrentUser('id') employerId: string,
     @Body(new ZodValidationPipe(createJobSchema)) body: CreateJobInput,
