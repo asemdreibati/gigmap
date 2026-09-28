@@ -1,4 +1,4 @@
-import type { JobStatus, UpdateJobStatusInput } from '@gigmap/shared';
+import { JOB_EXPIRY_DAYS, type JobStatus, type UpdateJobStatusInput } from '@gigmap/shared';
 
 /**
  * The job state machine, as pure functions so the rules can be tested without
@@ -85,4 +85,17 @@ export function statusAfterHeadcountChange(
   }
 
   return job.expiresAt > now ? 'open' : 'expired';
+}
+
+/**
+ * When a posting stops taking applications: its start time, or the standard
+ * window after it was posted, whichever is later. A job starting three weeks
+ * out should not vanish from the map after seven days.
+ *
+ * Anchored to `createdAt`, not to "now", so editing a job — including moving
+ * its start time — cannot keep it on the map indefinitely.
+ */
+export function postingExpiry(createdAt: Date, startTime: Date): Date {
+  const standard = new Date(createdAt.getTime() + JOB_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+  return startTime > standard ? startTime : standard;
 }

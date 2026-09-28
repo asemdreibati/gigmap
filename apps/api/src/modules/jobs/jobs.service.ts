@@ -1,23 +1,22 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import {
-  JOB_EXPIRY_DAYS,
-  type CreateJobInput,
-  type Job,
-  type JobCategory,
-  type JobStatus,
-  type NearbyJob,
-  type NearbyJobsQuery,
-  type PayType,
-  type UpdateJobInput,
-  type UpdateJobStatusInput,
+import type {
+  CreateJobInput,
+  Job,
+  JobCategory,
+  JobStatus,
+  NearbyJob,
+  NearbyJobsQuery,
+  PayType,
+  UpdateJobInput,
+  UpdateJobStatusInput,
 } from '@gigmap/shared';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { toJob, userProfileInclude } from '../../common/mappers';
 import { rejectPendingApplications } from '../applications/application-closure';
 import { NotificationsService } from '../notifications/notifications.service';
-import { isFull, manualTransitionError } from './job-lifecycle';
+import { isFull, manualTransitionError, postingExpiry } from './job-lifecycle';
 import { lockJob, requireOwnedJob } from './job-lock';
 
 /** Shape returned by the raw radius query; aliases are already camelCase. */
@@ -142,15 +141,14 @@ export class JobsService {
   }
 
   async create(employerId: string, input: CreateJobInput): Promise<Job> {
-    const { latitude, longitude, ...rest } = input;
+    const createdAt = new Date();
 
     const job = await this.prisma.job.create({
       data: {
-        ...rest,
+        ...input,
         employerId,
-        latitude,
-        longitude,
-        expiresAt: defaultExpiry(input.startTime),
+        createdAt,
+        expiresAt: postingExpiry(createdAt, input.startTime),
       },
       include: jobWithEmployer,
     });
@@ -183,7 +181,7 @@ export class JobsService {
         where: { id },
         data: {
           ...input,
-          ...(input.startTime ? { expiresAt: defaultExpiry(input.startTime) } : {}),
+          ...(input.startTime ? { expiresAt: postingExpiry(job.createdAt, input.startTime) } : {}),
           ...(fills ? { status: 'filled' as const } : {}),
         },
       });
@@ -231,16 +229,6 @@ export class JobsService {
 
     return this.findOne(id);
   }
-}
-
-/**
- * A posting stays visible until its start time, or the standard window,
- * whichever is later — a job starting three weeks out should not vanish from
- * the map after seven days.
- */
-function defaultExpiry(startTime: Date): Date {
-  const standard = new Date(Date.now() + JOB_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
-  return startTime > standard ? startTime : standard;
 }
 
 function toNearbyJob(row: NearbyJobRow): NearbyJob {

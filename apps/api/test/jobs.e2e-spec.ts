@@ -1,8 +1,9 @@
-import type { ApiError, NearbyJob } from '@gigmap/shared';
+import type { ApiError, Job, NearbyJob } from '@gigmap/shared';
 
 import {
   ZURICH,
   createTestApp,
+  hoursFromNow,
   postJob,
   resetDatabase,
   signUp,
@@ -90,6 +91,44 @@ describe('Jobs', () => {
       const days = (Date.parse(job.expiresAt) - Date.now()) / (24 * 60 * 60 * 1000);
 
       expect(days).toBeCloseTo(7, 1);
+    });
+
+    it('rejects moving the start time into the past on edit', async () => {
+      const job = await postJob(ctx, employer);
+
+      const response = await ctx
+        .as(employer)
+        .patch(`/v1/jobs/${job.id}`)
+        .send({ startTime: '2020-01-01T10:00:00.000Z' })
+        .expect(422);
+
+      expect((response.body as ApiError).errors).toHaveProperty('startTime');
+    });
+
+    it('does not extend the posting window when the job is edited', async () => {
+      const job = await postJob(ctx, employer);
+      // Pretend it was posted six days ago.
+      const postedAt = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
+      await ctx.prisma.job.update({ where: { id: job.id }, data: { createdAt: postedAt } });
+
+      const edited = await ctx
+        .as(employer)
+        .patch(`/v1/jobs/${job.id}`)
+        .send({ startTime: hoursFromNow(2).toISOString() })
+        .expect(200);
+
+      // A week after posting, i.e. about a day from now — not a fresh week.
+      const hoursLeft = (Date.parse((edited.body as Job).expiresAt) - Date.now()) / 3_600_000;
+      expect(hoursLeft).toBeCloseTo(24, 0);
+    });
+
+    it('keeps a job up until a start time set beyond the standard window', async () => {
+      const job = await postJob(ctx, employer);
+      const startTime = hoursFromNow(21 * 24).toISOString();
+
+      const edited = await ctx.as(employer).patch(`/v1/jobs/${job.id}`).send({ startTime });
+
+      expect((edited.body as Job).expiresAt).toBe(startTime);
     });
 
     it("forbids editing another employer's job", async () => {

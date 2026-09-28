@@ -2,6 +2,7 @@ import {
   isAcceptingWorkers,
   isClosedByEmployer,
   manualTransitionError,
+  postingExpiry,
   statusAfterHeadcountChange,
   type JobState,
 } from './job-lifecycle';
@@ -89,5 +90,19 @@ describe('statusAfterHeadcountChange', () => {
     expect(statusAfterHeadcountChange(job({ status: 'cancelled', filledSlots: 1 }), 0, now)).toBe(
       'cancelled',
     );
+  });
+});
+
+describe('postingExpiry', () => {
+  const posted = new Date('2026-09-01T12:00:00Z');
+
+  it('keeps a job up for the standard week after posting', () => {
+    const startsTomorrow = new Date('2026-09-02T12:00:00Z');
+    expect(postingExpiry(posted, startsTomorrow)).toEqual(new Date('2026-09-08T12:00:00Z'));
+  });
+
+  it('keeps a job starting later than that up until it starts', () => {
+    const startsInThreeWeeks = new Date('2026-09-22T12:00:00Z');
+    expect(postingExpiry(posted, startsInThreeWeeks)).toEqual(startsInThreeWeeks);
   });
 });

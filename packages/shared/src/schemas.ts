@@ -33,6 +33,11 @@ export const longitudeSchema = z
   .min(-180, 'Longitude must be between -180 and 180')
   .max(180, 'Longitude must be between -180 and 180');
 
+/** Accepts ISO strings (JSON) and Dates (forms); must lie in the future. */
+export const futureDateSchema = z.coerce
+  .date()
+  .refine((date) => date.getTime() > Date.now(), 'Start time must be in the future');
+
 // --- Users / profiles -------------------------------------------------------
 
 /**
@@ -61,28 +66,23 @@ export const updateProfileSchema = z.object({
 
 // --- Jobs -------------------------------------------------------------------
 
-export const createJobSchema = z
-  .object({
-    title: z.string().trim().min(3, 'Title is too short').max(100),
-    description: z.string().trim().min(10, 'Add a few more details').max(2000),
-    category: z.enum(JOB_CATEGORIES),
-    payAmount: z
-      .number()
-      .positive('Pay must be greater than zero')
-      .max(100_000)
-      .multipleOf(0.01, 'Pay can have at most 2 decimals'),
-    payType: z.enum(PAY_TYPES),
-    slots: z.number().int().min(1).max(50).default(1),
-    latitude: latitudeSchema,
-    longitude: longitudeSchema,
-    address: z.string().trim().min(3).max(300),
-    startTime: z.coerce.date(),
-    durationHours: z.number().positive().max(24).optional(),
-  })
-  .refine((job) => job.startTime.getTime() > Date.now(), {
-    message: 'Start time must be in the future',
-    path: ['startTime'],
-  });
+export const createJobSchema = z.object({
+  title: z.string().trim().min(3, 'Title is too short').max(100),
+  description: z.string().trim().min(10, 'Add a few more details').max(2000),
+  category: z.enum(JOB_CATEGORIES),
+  payAmount: z
+    .number()
+    .positive('Pay must be greater than zero')
+    .max(100_000)
+    .multipleOf(0.01, 'Pay can have at most 2 decimals'),
+  payType: z.enum(PAY_TYPES),
+  slots: z.number().int().min(1).max(50).default(1),
+  latitude: latitudeSchema,
+  longitude: longitudeSchema,
+  address: z.string().trim().min(3).max(300),
+  startTime: futureDateSchema,
+  durationHours: z.number().positive().max(24).optional(),
+});
 
 export const updateJobSchema = z.object({
   title: z.string().trim().min(3).max(100).optional(),
@@ -94,7 +94,7 @@ export const updateJobSchema = z.object({
   latitude: latitudeSchema.optional(),
   longitude: longitudeSchema.optional(),
   address: z.string().trim().min(3).max(300).optional(),
-  startTime: z.coerce.date().optional(),
+  startTime: futureDateSchema.optional(),
   durationHours: z.number().positive().max(24).optional(),
 });
 
