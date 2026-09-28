@@ -93,3 +93,12 @@ export const DEFAULT_TIMEZONE = 'Europe/Zurich';
 
 /** Map fallback when GPS is unavailable — Zurich centre. */
 export const FALLBACK_CENTER = { latitude: 47.3769, longitude: 8.5417 } as const;
+
+// --- Storage ---------------------------------------------------------------
+
+/**
+ * Public Supabase Storage bucket for profile photos. Clients upload to
+ * `<user id>/<file name>` inside it and send the resulting public URL as
+ * `photoUrl`; the API rejects URLs anywhere else. See docs/supabase-setup.md.
+ */
+export const AVATAR_BUCKET = 'avatars';

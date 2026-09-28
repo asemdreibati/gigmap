@@ -1,4 +1,10 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type {
   CreateProfileInput,
   PublicUser,
@@ -10,10 +16,15 @@ import type {
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { toPublicUser, toSelfUser, userProfileInclude } from '../../common/mappers';
 import type { AuthenticatedUser } from '../../common/guards/authenticated-user';
+import type { Env } from '../../config/env';
+import { isOwnAvatarUrl } from './avatar-url';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService<Env, true>,
+  ) {}
 
   /**
    * Called once from the role-select screen, straight after Supabase sign-up.
@@ -73,6 +84,18 @@ export class UsersService {
 
   async update(auth: AuthenticatedUser, input: UpdateProfileInput): Promise<SelfUser> {
     const { skills, experienceYears, companyName, website, ...shared } = input;
+
+    if (
+      input.photoUrl &&
+      !isOwnAvatarUrl(input.photoUrl, this.config.get('SUPABASE_URL', { infer: true }), auth.id)
+    ) {
+      const message = 'Upload the photo to your own folder in the avatars bucket first';
+      throw new UnprocessableEntityException({
+        statusCode: 422,
+        message,
+        errors: { photoUrl: [message] },
+      });
+    }
 
     const isWorker = auth.role === 'worker';
     // Role-specific fields are silently ignored for the other role rather than

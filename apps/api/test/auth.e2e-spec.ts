@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { TEST_SUPABASE_URL } from './support/env';
 import {
   createTestApp,
   resetDatabase,
@@ -89,6 +90,21 @@ describe('Authentication and onboarding', () => {
       .expect(200);
 
     expect(response.body).toMatchObject({ phone: null, bio: null, website: null });
+  });
+
+  it('only accepts profile photos from the user’s own avatar folder', async () => {
+    const worker = await signUp(ctx, 'worker');
+    const folder = `${TEST_SUPABASE_URL}/storage/v1/object/public/avatars`;
+
+    await ctx
+      .as(worker)
+      .patch('/v1/users/me')
+      .send({ photoUrl: 'https://tracker.example/pixel.gif' })
+      .expect(422);
+
+    const own = `${folder}/${worker.id}/face.jpg`;
+    const response = await ctx.as(worker).patch('/v1/users/me').send({ photoUrl: own }).expect(200);
+    expect(response.body).toMatchObject({ photoUrl: own });
   });
 
   it('enforces roles', async () => {
