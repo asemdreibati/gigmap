@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
   JOB_EXPIRY_DAYS,
@@ -176,11 +181,7 @@ export class JobsService {
     return toJob(job);
   }
 
-  async updateStatus(
-    employerId: string,
-    id: string,
-    input: UpdateJobStatusInput,
-  ): Promise<Job> {
+  async updateStatus(employerId: string, id: string, input: UpdateJobStatusInput): Promise<Job> {
     const existing = await this.assertOwned(employerId, id);
 
     if (existing.status === 'cancelled') {

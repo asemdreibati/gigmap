@@ -26,7 +26,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     const body = this.toApiError(exception);
 
-    if (body.statusCode >= HttpStatus.INTERNAL_SERVER_ERROR) {
+    if (body.statusCode >= 500) {
       this.logger.error(
         `${request.method} ${request.url} -> ${body.statusCode}`,
         exception instanceof Error ? exception.stack : String(exception),

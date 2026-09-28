@@ -124,8 +124,7 @@ export class RatingsService {
 
     return applications
       .map((application) => {
-        const counterparty =
-          auth.role === 'worker' ? application.job.employer : application.worker;
+        const counterparty = auth.role === 'worker' ? application.job.employer : application.worker;
 
         return {
           jobId: application.jobId,

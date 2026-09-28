@@ -14,10 +14,18 @@
     "db:migrate": "pnpm --filter @gigmap/api exec prisma migrate dev",
     "db:deploy": "pnpm --filter @gigmap/api exec prisma migrate deploy",
     "db:generate": "pnpm --filter @gigmap/api exec prisma generate",
-    "db:studio": "pnpm --filter @gigmap/api exec prisma studio"
+    "db:studio": "pnpm --filter @gigmap/api exec prisma studio",
+    "format": "prettier --write \"**/*.{ts,mjs,json}\"",
+    "format:check": "prettier --check \"**/*.{ts,mjs,json}\""
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.6",
     "turbo": "^2.3.3",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.71.0"
   }
 }

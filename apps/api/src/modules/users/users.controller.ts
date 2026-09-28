@@ -63,10 +63,7 @@ export class UsersController {
 
   @Delete('me/push-tokens/:token')
   @HttpCode(HttpStatus.NO_CONTENT)
-  removePushToken(
-    @CurrentUser('id') id: string,
-    @Param('token') token: string,
-  ): Promise<void> {
+  removePushToken(@CurrentUser('id') id: string, @Param('token') token: string): Promise<void> {
     return this.users.removePushToken(id, token);
   }
 

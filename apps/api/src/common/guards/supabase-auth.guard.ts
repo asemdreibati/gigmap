@@ -72,10 +72,7 @@ export class SupabaseAuthGuard implements CanActivate {
       throw new ForbiddenException('This account has been deactivated');
     }
 
-    const allowNoProfile = this.reflector.getAllAndOverride<boolean>(
-      ALLOW_NO_PROFILE_KEY,
-      targets,
-    );
+    const allowNoProfile = this.reflector.getAllAndOverride<boolean>(ALLOW_NO_PROFILE_KEY, targets);
 
     if (!profile && !allowNoProfile) {
       // Signed up but never finished role selection.

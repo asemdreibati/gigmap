@@ -20,7 +20,10 @@ export class ReportsService {
     const exists =
       input.targetType === 'job'
         ? await this.prisma.job.findUnique({ where: { id: input.targetId }, select: { id: true } })
-        : await this.prisma.user.findUnique({ where: { id: input.targetId }, select: { id: true } });
+        : await this.prisma.user.findUnique({
+            where: { id: input.targetId },
+            select: { id: true },
+          });
 
     if (!exists) {
       throw new BadRequestException('The reported item no longer exists');

@@ -111,11 +111,7 @@ export const updateJobStatusSchema = z.object({
 export const nearbyJobsQuerySchema = z.object({
   lat: z.coerce.number().pipe(latitudeSchema),
   lng: z.coerce.number().pipe(longitudeSchema),
-  radiusKm: z.coerce
-    .number()
-    .min(RADIUS_KM_MIN)
-    .max(RADIUS_KM_MAX)
-    .default(RADIUS_KM_DEFAULT),
+  radiusKm: z.coerce.number().min(RADIUS_KM_MIN).max(RADIUS_KM_MAX).default(RADIUS_KM_DEFAULT),
   category: z.enum(JOB_CATEGORIES).optional(),
   limit: z.coerce.number().int().min(1).max(NEARBY_JOBS_LIMIT).default(NEARBY_JOBS_LIMIT),
 });

@@ -1,4 +1,4 @@
-import { PipeTransform, UnprocessableEntityException } from '@nestjs/common';
+import { type PipeTransform, UnprocessableEntityException } from '@nestjs/common';
 import type { ZodSchema } from 'zod';
 
 /**

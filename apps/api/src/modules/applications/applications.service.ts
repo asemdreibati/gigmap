@@ -6,12 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, type Application as ApplicationRow, type Job as JobRow } from '@prisma/client';
-import type {
-  Application,
-  ApplicationStatus,
-  ListApplicationsQuery,
-  UpdateApplicationInput,
-} from '@gigmap/shared';
+import type { Application, ListApplicationsQuery, UpdateApplicationInput } from '@gigmap/shared';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { toJob, toPublicUser, userProfileInclude } from '../../common/mappers';
@@ -72,10 +67,7 @@ export class ApplicationsService {
     } catch (error) {
       // Racing double-taps on the Apply button land here via the
       // (job_id, worker_id) unique index.
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002'
-      ) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ConflictException('You have already applied for this job');
       }
       throw error;
@@ -83,10 +75,7 @@ export class ApplicationsService {
   }
 
   /** The worker's "My Applications" screen. */
-  async findForWorker(
-    workerId: string,
-    query: ListApplicationsQuery,
-  ): Promise<Application[]> {
+  async findForWorker(workerId: string, query: ListApplicationsQuery): Promise<Application[]> {
     const applications = await this.prisma.application.findMany({
       where: { workerId, ...(query.status ? { status: query.status } : {}) },
       include: { job: { include: { employer: { include: userProfileInclude } } } },
@@ -270,7 +259,7 @@ function toApplication(application: ApplicationRow): Application {
     id: application.id,
     jobId: application.jobId,
     workerId: application.workerId,
-    status: application.status as ApplicationStatus,
+    status: application.status,
     createdAt: application.createdAt.toISOString(),
   };
 }
