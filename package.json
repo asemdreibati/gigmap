@@ -16,7 +16,9 @@
     "db:generate": "pnpm --filter @gigmap/api exec prisma generate",
     "db:studio": "pnpm --filter @gigmap/api exec prisma studio",
     "format": "prettier --write \"**/*.{ts,mjs,json}\"",
-    "format:check": "prettier --check \"**/*.{ts,mjs,json}\""
+    "format:check": "prettier --check \"**/*.{ts,mjs,json}\"",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

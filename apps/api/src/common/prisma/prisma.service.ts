@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { type Prisma, PrismaClient } from '@prisma/client';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
@@ -7,7 +7,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   constructor() {
     super({
-      log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+      log: logLevels(process.env['NODE_ENV']),
     });
   }
 
@@ -19,4 +19,16 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   async onModuleDestroy(): Promise<void> {
     await this.$disconnect();
   }
+}
+
+/**
+ * Prisma logs every failed query at `error`, including the unique-violation
+ * errors services catch and turn into 409s. Tests exercise those paths on
+ * purpose, so keep their output clean.
+ */
+function logLevels(nodeEnv: string | undefined): Prisma.LogLevel[] {
+  if (nodeEnv === 'test') {
+    return [];
+  }
+  return nodeEnv === 'development' ? ['warn', 'error'] : ['error'];
 }
