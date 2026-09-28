@@ -17,16 +17,19 @@ export class ReportsService {
   ) {}
 
   async create(reporterId: string, input: CreateReportInput): Promise<Report> {
-    const exists =
-      input.targetType === 'job'
-        ? await this.prisma.job.findUnique({ where: { id: input.targetId }, select: { id: true } })
-        : await this.prisma.user.findUnique({
-            where: { id: input.targetId },
-            select: { id: true },
-          });
+    const ownerId = await this.findOwnerId(input);
 
-    if (!exists) {
+    if (!ownerId) {
       throw new BadRequestException('The reported item no longer exists');
+    }
+
+    // Each report emails the admin; reports against yourself are only noise.
+    if (ownerId === reporterId) {
+      throw new BadRequestException(
+        input.targetType === 'job'
+          ? 'You cannot report your own job'
+          : 'You cannot report yourself',
+      );
     }
 
     const report = await this.prisma.report.create({
@@ -59,5 +62,22 @@ export class ReportsService {
       reason: report.reason,
       createdAt: report.createdAt.toISOString(),
     };
+  }
+
+  /** Who is answerable for the reported item, or null if it no longer exists. */
+  private async findOwnerId({ targetType, targetId }: CreateReportInput): Promise<string | null> {
+    if (targetType === 'job') {
+      const job = await this.prisma.job.findUnique({
+        where: { id: targetId },
+        select: { employerId: true },
+      });
+      return job?.employerId ?? null;
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: targetId },
+      select: { id: true },
+    });
+    return user?.id ?? null;
   }
 }
