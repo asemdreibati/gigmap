@@ -10,7 +10,7 @@ import type { Application, ListApplicationsQuery, UpdateApplicationInput } from 
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { toJob, toPublicUser, userProfileInclude } from '../../common/mappers';
-import { isAcceptingWorkers, isFull, statusAfterHeadcountChange } from '../jobs/job-lifecycle';
+import { hiringRefusal, statusAfterHeadcountChange, type JobState } from '../jobs/job-lifecycle';
 import { lockJob, requireOwnedJob } from '../jobs/job-lock';
 import { NotificationsService } from '../notifications/notifications.service';
 import { rejectPendingApplications, type ClosedApplication } from './application-closure';
@@ -33,11 +33,7 @@ export class ApplicationsService {
         throw new NotFoundException('Job not found');
       }
 
-      if (!isAcceptingWorkers(job)) {
-        throw isFull(job)
-          ? new ConflictException('All positions for this job have been filled')
-          : new BadRequestException('This job is no longer accepting applications');
-      }
+      assertHiring(job, 'This job is no longer accepting applications');
 
       try {
         const application = await tx.application.create({ data: { jobId, workerId } });
@@ -154,10 +150,8 @@ export class ApplicationsService {
       const delta =
         (input.status === 'accepted' ? 1 : 0) - (application.status === 'accepted' ? 1 : 0);
 
-      if (delta > 0 && !isAcceptingWorkers(job)) {
-        throw isFull(job)
-          ? new ConflictException('All positions for this job have been filled')
-          : new BadRequestException('This job is no longer accepting workers');
+      if (delta > 0) {
+        assertHiring(job, 'This job is no longer accepting workers');
       }
 
       const updated = await tx.application.update({
@@ -210,6 +204,18 @@ export class ApplicationsService {
       ...toApplication(result.application),
       worker: toPublicUser(result.application.worker),
     };
+  }
+}
+
+/** Throws unless the job can take another worker. */
+function assertHiring(job: JobState, closedMessage: string): void {
+  switch (hiringRefusal(job)) {
+    case null:
+      return;
+    case 'full':
+      throw new ConflictException('All positions for this job have been filled');
+    case 'closed':
+      throw new BadRequestException(closedMessage);
   }
 }
 

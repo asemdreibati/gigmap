@@ -1,4 +1,5 @@
 import {
+  hiringRefusal,
   isAcceptingWorkers,
   isClosedByEmployer,
   manualTransitionError,
@@ -26,6 +27,24 @@ describe('isAcceptingWorkers', () => {
     expect(isAcceptingWorkers(job({ expiresAt: earlier }), now)).toBe(false);
     expect(isAcceptingWorkers(job({ status: 'filled', filledSlots: 1 }), now)).toBe(false);
     expect(isAcceptingWorkers(job({ status: 'cancelled' }), now)).toBe(false);
+  });
+});
+
+describe('hiringRefusal', () => {
+  it('is null while the job is hiring', () => {
+    expect(hiringRefusal(job(), now)).toBeNull();
+  });
+
+  it('reports a job that filled up as full', () => {
+    expect(hiringRefusal(job({ status: 'filled', filledSlots: 3 }), now)).toBe('full');
+  });
+
+  it('reports hand-closed, cancelled and expired jobs as closed, even when full', () => {
+    expect(hiringRefusal(job({ status: 'filled', filledSlots: 1 }), now)).toBe('closed');
+    expect(hiringRefusal(job({ status: 'cancelled', filledSlots: 3 }), now)).toBe('closed');
+    expect(hiringRefusal(job({ status: 'filled', filledSlots: 3, expiresAt: earlier }), now)).toBe(
+      'closed',
+    );
   });
 });
 

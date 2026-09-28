@@ -33,6 +33,20 @@ export function isAcceptingWorkers(job: JobState, now = new Date()): boolean {
 }
 
 /**
+ * Why a job is not taking workers, or null if it is. `full` means it would
+ * be hiring but every slot is taken (a 409 for the client); `closed` means it
+ * has been filled by hand, cancelled or has expired (a 400).
+ */
+export function hiringRefusal(job: JobState, now = new Date()): 'full' | 'closed' | null {
+  if (isAcceptingWorkers(job, now)) {
+    return null;
+  }
+
+  const live = (job.status === 'open' || job.status === 'filled') && job.expiresAt > now;
+  return live && isFull(job) ? 'full' : 'closed';
+}
+
+/**
  * A job marked `filled` while it still has free slots was closed by the
  * employer by hand. That is the only way to reach this state: automatic
  * filling happens exactly when the last slot is taken, and acceptances are
