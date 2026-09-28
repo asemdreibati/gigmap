@@ -81,7 +81,10 @@ export const RADIUS_KM_DEFAULT = 10;
 /** Hard cap on rows returned by a single nearby query, to bound map payloads. */
 export const NEARBY_JOBS_LIMIT = 200;
 
-/** Default lifetime of a job posting. Mirrored by the DB column default. */
+/**
+ * Minimum lifetime of a job posting, counted from when it was posted. A job
+ * starting later than this stays up until its start time.
+ */
 export const JOB_EXPIRY_DAYS = 7;
 
 /** v1 is Switzerland-only: single currency, single timezone. */
