@@ -5,23 +5,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, type Application as ApplicationRow, type Job as JobRow } from '@prisma/client';
+import { Prisma, type Application as ApplicationRow } from '@prisma/client';
 import type { Application, ListApplicationsQuery, UpdateApplicationInput } from '@gigmap/shared';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { toJob, toPublicUser, userProfileInclude } from '../../common/mappers';
+import { isAcceptingWorkers, isFull, statusAfterHeadcountChange } from '../jobs/job-lifecycle';
+import { lockJob, requireOwnedJob } from '../jobs/job-lock';
 import { NotificationsService } from '../notifications/notifications.service';
-
-/** Job row as returned by the `FOR UPDATE` lock query. */
-interface LockedJob {
-  id: string;
-  employerId: string;
-  title: string;
-  slots: number;
-  filledSlots: number;
-  status: string;
-  expiresAt: Date;
-}
 
 @Injectable()
 export class ApplicationsService {
@@ -134,13 +125,13 @@ export class ApplicationsService {
   }
 
   /**
-   * Accept or reject an applicant.
+   * Accept or reject an applicant, or withdraw an earlier acceptance.
    *
-   * The job row is locked with `SELECT ... FOR UPDATE` for the duration of the
-   * transaction. Without it, two employer sessions accepting at the same moment
-   * would both read `filled_slots < slots`, both write `filled_slots + 1`, and
-   * overfill the job — the check constraint would then reject one of them with
-   * a 500 rather than a clean conflict.
+   * The job row is locked for the duration of the transaction. Without it,
+   * two employer sessions accepting at the same moment would both read
+   * `filled_slots < slots`, both write `filled_slots + 1`, and overfill the
+   * job — the check constraint would then reject one of them with a 500
+   * rather than a clean conflict.
    */
   async updateStatus(
     employerId: string,
@@ -157,26 +148,7 @@ export class ApplicationsService {
         throw new NotFoundException('Application not found');
       }
 
-      const [job] = await tx.$queryRaw<LockedJob[]>`
-        SELECT "id",
-               "employer_id"  AS "employerId",
-               "title",
-               "slots",
-               "filled_slots" AS "filledSlots",
-               "status"::text AS "status",
-               "expires_at"   AS "expiresAt"
-        FROM "jobs"
-        WHERE "id" = ${application.jobId}::uuid
-        FOR UPDATE
-      `;
-
-      if (!job) {
-        throw new NotFoundException('Job not found');
-      }
-
-      if (job.employerId !== employerId) {
-        throw new ForbiddenException('This job belongs to another employer');
-      }
+      const job = requireOwnedJob(await lockJob(tx, application.jobId, 'update'), employerId);
 
       if (job.status === 'cancelled') {
         throw new BadRequestException('This job has been cancelled');
@@ -189,10 +161,11 @@ export class ApplicationsService {
       // +1 when a slot is taken, -1 when an acceptance is withdrawn.
       const delta =
         (input.status === 'accepted' ? 1 : 0) - (application.status === 'accepted' ? 1 : 0);
-      const filledSlots = job.filledSlots + delta;
 
-      if (filledSlots > job.slots) {
-        throw new ConflictException('All positions for this job have been filled');
+      if (delta > 0 && !isAcceptingWorkers(job)) {
+        throw isFull(job)
+          ? new ConflictException('All positions for this job have been filled')
+          : new BadRequestException('This job is no longer accepting workers');
       }
 
       const updated = await tx.application.update({
@@ -202,12 +175,10 @@ export class ApplicationsService {
       });
 
       if (delta !== 0) {
+        const filledSlots = job.filledSlots + delta;
         await tx.job.update({
           where: { id: job.id },
-          data: {
-            filledSlots,
-            status: nextJobStatus(filledSlots, job),
-          },
+          data: { filledSlots, status: statusAfterHeadcountChange(job, filledSlots) },
         });
       }
 
@@ -241,17 +212,6 @@ export class ApplicationsService {
       worker: toPublicUser(result.application.worker),
     };
   }
-}
-
-/**
- * A job goes to `filled` when the last slot is taken and drops back to `open`
- * if an acceptance is later withdrawn — unless it has aged out in the meantime.
- */
-function nextJobStatus(filledSlots: number, job: LockedJob): JobRow['status'] {
-  if (filledSlots >= job.slots) {
-    return 'filled';
-  }
-  return job.expiresAt > new Date() ? 'open' : 'expired';
 }
 
 function toApplication(application: ApplicationRow): Application {

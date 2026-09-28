@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
   JOB_EXPIRY_DAYS,
@@ -20,6 +15,8 @@ import {
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { toJob, userProfileInclude } from '../../common/mappers';
+import { isFull, manualTransitionError } from './job-lifecycle';
+import { lockJob, requireOwnedJob } from './job-lock';
 
 /** Shape returned by the raw radius query; aliases are already camelCase. */
 interface NearbyJobRow {
@@ -157,61 +154,52 @@ export class JobsService {
   }
 
   async update(employerId: string, id: string, input: UpdateJobInput): Promise<Job> {
-    const existing = await this.assertOwned(employerId, id);
+    await this.prisma.$transaction(async (tx) => {
+      // Locked so a concurrent acceptance cannot change `filled_slots`
+      // between the check below and the write.
+      const job = requireOwnedJob(await lockJob(tx, id, 'update'), employerId);
 
-    if (existing.status !== 'open') {
-      throw new BadRequestException('Only open jobs can be edited');
-    }
+      if (job.status !== 'open') {
+        throw new BadRequestException('Only open jobs can be edited');
+      }
 
-    if (input.slots !== undefined && input.slots < existing.filledSlots) {
-      throw new BadRequestException(
-        `You have already accepted ${existing.filledSlots} worker(s); slots cannot go below that`,
-      );
-    }
+      const slots = input.slots ?? job.slots;
+      if (slots < job.filledSlots) {
+        throw new BadRequestException(
+          `You have already accepted ${job.filledSlots} worker(s); slots cannot go below that`,
+        );
+      }
 
-    const job = await this.prisma.job.update({
-      where: { id },
-      data: {
-        ...input,
-        ...(input.startTime ? { expiresAt: defaultExpiry(input.startTime) } : {}),
-      },
-      include: jobWithEmployer,
+      await tx.job.update({
+        where: { id },
+        data: {
+          ...input,
+          ...(input.startTime ? { expiresAt: defaultExpiry(input.startTime) } : {}),
+          // Shrinking the headcount to what is already hired fills the job,
+          // exactly as accepting the last applicant would have.
+          ...(isFull({ slots, filledSlots: job.filledSlots }) ? { status: 'filled' as const } : {}),
+        },
+      });
     });
 
-    return toJob(job);
+    return this.findOne(id);
   }
 
   async updateStatus(employerId: string, id: string, input: UpdateJobStatusInput): Promise<Job> {
-    const existing = await this.assertOwned(employerId, id);
+    await this.prisma.$transaction(async (tx) => {
+      const job = requireOwnedJob(await lockJob(tx, id, 'update'), employerId);
 
-    if (existing.status === 'cancelled') {
-      throw new BadRequestException('This job has already been cancelled');
-    }
+      const error = manualTransitionError(job.status, input.status);
+      if (error) {
+        throw new BadRequestException(error);
+      }
 
-    const job = await this.prisma.job.update({
-      where: { id },
-      data: { status: input.status },
-      include: jobWithEmployer,
+      if (job.status !== input.status) {
+        await tx.job.update({ where: { id }, data: { status: input.status } });
+      }
     });
 
-    return toJob(job);
-  }
-
-  private async assertOwned(employerId: string, id: string) {
-    const job = await this.prisma.job.findUnique({
-      where: { id },
-      select: { id: true, employerId: true, status: true, filledSlots: true },
-    });
-
-    if (!job) {
-      throw new NotFoundException('Job not found');
-    }
-
-    if (job.employerId !== employerId) {
-      throw new ForbiddenException('This job belongs to another employer');
-    }
-
-    return job;
+    return this.findOne(id);
   }
 }
 
