@@ -4,7 +4,7 @@ Uber-style job board: workers open a live map of short-term jobs near them and
 apply with one tap; employers drop a pin and manage applicants.
 
 See [gigmap prd.md](gigmap%20prd.md) for the product spec. This README covers
-the code.
+the code; deeper docs and architecture decisions are in [docs/](docs/README.md).
 
 ---
 
@@ -47,6 +47,8 @@ Why this split:
 - pnpm 9 — `corepack enable && corepack prepare pnpm@9.12.3 --activate`
 - A Supabase project, **created in an EU region (Frankfurt)**. The region cannot
   be changed later, and it matters for nFADP/GDPR posture and Swiss latency.
+  Setup steps, including the avatars bucket: [docs/supabase-setup.md](docs/supabase-setup.md).
+- Docker, for the end-to-end tests' PostGIS database.
 
 ### Install
 
@@ -79,6 +81,18 @@ pnpm --filter @gigmap/api dev
 ```
 
 `GET http://localhost:3333/health` should return `{"status":"ok","database":"up"}`.
+
+### Check
+
+```bash
+pnpm lint && pnpm typecheck && pnpm format:check
+pnpm test                 # unit tests
+pnpm test:e2e             # end-to-end, needs TEST_DATABASE_URL — see docs/testing.md
+```
+
+CI runs all of these plus a Prisma schema/migration drift check on every pull
+request. Deployment (Docker image, migrations, configuration) is in
+[docs/deployment.md](docs/deployment.md).
 
 ---
 
@@ -116,6 +130,14 @@ Validation errors return `422` with per-field messages:
 { "statusCode": 422, "message": "Title is too short", "errors": { "title": ["Title is too short"] } }
 ```
 
+In `PATCH` bodies, omitting a field leaves it unchanged and `null` clears an
+optional one (`phone`, `bio`, `photoUrl`, `companyName`, `website`,
+`durationHours`).
+
+Requests are rate-limited per user (120/min overall; reports, job posts and
+applications have tighter hourly budgets). Over the limit, the API returns
+`429` with `Retry-After`. See [ADR 0009](docs/adr/0009-per-user-rate-limiting.md).
+
 ---
 
 ## Things worth knowing
@@ -145,31 +167,60 @@ before applying:**
 pnpm --filter @gigmap/api exec prisma migrate dev --create-only
 ```
 
-Prisma does not know about the extension, the triggers or the GiST indexes, and
-will happily generate a migration that drops them.
+Prisma does not know about the extension or the triggers. The GiST index is
+declared in the schema so Prisma leaves it alone, and CI fails if the schema
+and the migrations ever drift apart
+([ADR 0003](docs/adr/0003-postgis-location-via-trigger.md)).
 
-### Concurrency on accept
+### Job and application lifecycle
 
-Two employer sessions accepting the last slot at the same moment is a real race.
-`ApplicationsService.updateStatus` locks the job row with
-`SELECT … FOR UPDATE` for the length of the transaction, and the
-`jobs_filled_slots_check` constraint is the backstop if that is ever bypassed.
+Job status changes go through one state machine,
+[`job-lifecycle.ts`](apps/api/src/modules/jobs/job-lifecycle.ts). In short:
 
-Withdrawing an acceptance decrements the counter and reopens the job.
+- A job takes applications and acceptances only while `open`, unexpired and
+  not full. Taking the last slot fills it.
+- A job the employer marks filled **stays** filled. Withdrawing an acceptance
+  only reopens a job that filled up by itself.
+- Filling, cancelling or expiring a job closes its pending applications and
+  notifies those workers. Cancelling also notifies hired workers.
+- A posting lasts `max(posted + 7 days, start time)`, and edits cannot extend
+  that.
+
+Diagrams and the full table of side effects are in
+[docs/job-lifecycle.md](docs/job-lifecycle.md); the push payloads are in
+[docs/notifications.md](docs/notifications.md).
+
+### Concurrency
+
+Two employer sessions accepting the last slot at the same moment is a real
+race. Every operation that changes a job's status or headcount runs in a
+transaction holding `SELECT … FOR UPDATE` on the job row. Applying takes
+`FOR SHARE`, so it cannot slip in behind a close. The
+`jobs_filled_slots_check` constraint is the backstop
+([ADR 0005](docs/adr/0005-row-locks-for-job-state-changes.md)).
 
 ### Contact details are the v1 payment mechanism
 
 There is no Stripe in v1 — the two parties arrange payment themselves. So
 `email` and `phone` are absent from `PublicUser` entirely and are released only
 on an **accepted** application, to both sides. Do not add them to the public
-mapper.
+mapper ([ADR 0006](docs/adr/0006-contact-details-as-v1-payment-channel.md)).
+
+### Profile photos
+
+Clients upload to Supabase Storage at `avatars/<user id>/…`, then save the
+public URL. The API rejects `photoUrl`s anywhere else
+([ADR 0011](docs/adr/0011-profile-photos-restricted-to-own-folder.md)).
 
 ### Scheduled work
 
-`MaintenanceService` replaces what would have been pg_cron: hourly expiry sweep,
-daily 09:00 Europe/Zurich reminder for jobs expiring within 24h. Both run
-in-process — **if the API is ever scaled past one instance, these need a lock or
-a dedicated worker**, or every instance will run them.
+`@nestjs/schedule` replaces what would have been pg_cron: an hourly expiry
+sweep, a daily 09:00 Europe/Zurich reminder for jobs expiring within 24h, and a
+10-minute Expo push-receipt check that prunes dead device tokens. They run
+in-process, as do the rate-limit counters. **If the API is ever scaled past
+one instance, read the scale-out section of
+[docs/deployment.md](docs/deployment.md#running-more-than-one-instance)
+first.**
 
 ---
 
