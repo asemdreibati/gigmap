@@ -74,6 +74,23 @@ describe('Authentication and onboarding', () => {
     expect(response.body).not.toHaveProperty('phone');
   });
 
+  it('clears optional profile fields when sent null', async () => {
+    const employer = await signUp(ctx, 'employer');
+    await ctx
+      .as(employer)
+      .patch('/v1/users/me')
+      .send({ bio: 'Family bakery', website: 'https://example.test' })
+      .expect(200);
+
+    const response = await ctx
+      .as(employer)
+      .patch('/v1/users/me')
+      .send({ phone: null, bio: null, website: null })
+      .expect(200);
+
+    expect(response.body).toMatchObject({ phone: null, bio: null, website: null });
+  });
+
   it('enforces roles', async () => {
     const worker = await signUp(ctx, 'worker');
 

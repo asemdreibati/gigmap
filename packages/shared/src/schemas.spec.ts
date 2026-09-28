@@ -1,4 +1,4 @@
-import { createJobSchema, updateJobSchema } from './schemas';
+import { createJobSchema, updateJobSchema, updateProfileSchema } from './schemas';
 
 const hour = 60 * 60 * 1000;
 
@@ -44,5 +44,20 @@ describe('updateJobSchema', () => {
 
   it('accepts a partial update without a start time', () => {
     expect(updateJobSchema.parse({ title: 'New title' })).toEqual({ title: 'New title' });
+  });
+
+  it('clears the duration with null', () => {
+    expect(updateJobSchema.parse({ durationHours: null })).toEqual({ durationHours: null });
+  });
+});
+
+describe('updateProfileSchema', () => {
+  it('clears optional fields with null', () => {
+    const cleared = { phone: null, bio: null, photoUrl: null, companyName: null, website: null };
+    expect(updateProfileSchema.parse(cleared)).toEqual(cleared);
+  });
+
+  it('does not allow clearing the name', () => {
+    expect(updateProfileSchema.safeParse({ name: null }).success).toBe(false);
   });
 });

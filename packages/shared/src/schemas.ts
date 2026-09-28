@@ -51,17 +51,21 @@ export const createProfileSchema = z.object({
   phone: z.string().trim().min(6).max(30).optional(),
 });
 
+/**
+ * Every field is optional; omit it to leave it unchanged. Optional profile
+ * fields also accept `null`, which clears them.
+ */
 export const updateProfileSchema = z.object({
   name: z.string().trim().min(2).max(80).optional(),
-  phone: z.string().trim().min(6).max(30).optional(),
-  bio: z.string().trim().max(500).optional(),
-  photoUrl: z.string().url().max(500).optional(),
+  phone: z.string().trim().min(6).max(30).nullish(),
+  bio: z.string().trim().max(500).nullish(),
+  photoUrl: z.string().url().max(500).nullish(),
   // worker-only
   skills: z.array(z.enum(WORKER_SKILLS)).max(10).optional(),
   experienceYears: z.number().int().min(0).max(60).optional(),
   // employer-only
-  companyName: z.string().trim().min(2).max(120).optional(),
-  website: z.string().url().max(200).optional(),
+  companyName: z.string().trim().min(2).max(120).nullish(),
+  website: z.string().url().max(200).nullish(),
 });
 
 // --- Jobs -------------------------------------------------------------------
@@ -84,6 +88,7 @@ export const createJobSchema = z.object({
   durationHours: z.number().positive().max(24).optional(),
 });
 
+/** Omit a field to leave it unchanged; `durationHours: null` clears it. */
 export const updateJobSchema = z.object({
   title: z.string().trim().min(3).max(100).optional(),
   description: z.string().trim().min(10).max(2000).optional(),
@@ -95,7 +100,7 @@ export const updateJobSchema = z.object({
   longitude: longitudeSchema.optional(),
   address: z.string().trim().min(3).max(300).optional(),
   startTime: futureDateSchema.optional(),
-  durationHours: z.number().positive().max(24).optional(),
+  durationHours: z.number().positive().max(24).nullish(),
 });
 
 /**

@@ -131,6 +131,18 @@ describe('Jobs', () => {
       expect((edited.body as Job).expiresAt).toBe(startTime);
     });
 
+    it('clears the duration when sent null', async () => {
+      const job = await postJob(ctx, employer, { durationHours: 4 });
+
+      const edited = await ctx
+        .as(employer)
+        .patch(`/v1/jobs/${job.id}`)
+        .send({ durationHours: null })
+        .expect(200);
+
+      expect((edited.body as Job).durationHours).toBeNull();
+    });
+
     it("forbids editing another employer's job", async () => {
       const job = await postJob(ctx, employer);
       const other = await signUp(ctx, 'employer');
