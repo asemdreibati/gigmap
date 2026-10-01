@@ -17,8 +17,10 @@ Copy into `.env` (see [.env.example](../.env.example)):
 - **Connection strings** (Connect → ORMs → Prisma): transaction pooler →
   `DATABASE_URL`, session pooler → `DIRECT_URL`. Pool sizing is in
   [deployment.md](deployment.md#database-pool-sizing).
-- **API keys**: anon → `SUPABASE_ANON_KEY` (the only key clients get);
-  service role → `SUPABASE_SERVICE_ROLE_KEY` (server-side only).
+- **API keys**: anon → `SUPABASE_ANON_KEY`, for the clients only. The API
+  needs no Supabase key; it verifies tokens against the project's public
+  JWKS. Nothing in GigMap needs the service-role key, so keep it out of
+  every environment.
 
 Then apply the schema: `pnpm db:deploy`.
 

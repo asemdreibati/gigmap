@@ -21,8 +21,6 @@ export const envSchema = z.object({
   DIRECT_URL: z.string().url().optional(),
 
   SUPABASE_URL: z.string().url(),
-  SUPABASE_ANON_KEY: z.string().min(1),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   /**
    * Only set on legacy HS256 projects. When empty the guard verifies tokens
    * against the project's published JWKS instead, which is what new Supabase

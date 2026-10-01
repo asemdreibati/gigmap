@@ -21,8 +21,6 @@ Object.assign(process.env, {
   DATABASE_URL: databaseUrl,
   DIRECT_URL: databaseUrl,
   SUPABASE_URL: TEST_SUPABASE_URL,
-  SUPABASE_ANON_KEY: 'test-anon-key',
-  SUPABASE_SERVICE_ROLE_KEY: 'test-service-role-key',
   SUPABASE_JWT_SECRET: TEST_JWT_SECRET,
   EXPO_ACCESS_TOKEN: '',
   RESEND_API_KEY: '',

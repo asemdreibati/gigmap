@@ -45,23 +45,21 @@ Validated at boot by [`config/env.ts`](../apps/api/src/config/env.ts). A
 missing or malformed required variable stops the process with a list of
 what is wrong.
 
-| Variable                    | Required        | Notes                                                                                            |
-| --------------------------- | --------------- | ------------------------------------------------------------------------------------------------ |
-| `DATABASE_URL`              | yes             | Pooled, transaction mode (port 6543) with `pgbouncer=true`. See pool sizing below.               |
-| `DIRECT_URL`                | migrations only | Session mode (port 5432). Not read by the running API.                                           |
-| `SUPABASE_URL`              | yes             | `https://<ref>.supabase.co`. Token issuer, JWKS location, and the allowed origin for photo URLs. |
-| `SUPABASE_JWT_SECRET`       | legacy only     | Set only on projects still signing with the shared HS256 secret; otherwise JWKS is used.         |
-| `SUPABASE_ANON_KEY`         | yes¹            | Not currently used by the API.                                                                   |
-| `SUPABASE_SERVICE_ROLE_KEY` | yes¹            | Not currently used by the API. Never ship it to a client.                                        |
-| `CORS_ORIGINS`              | no              | Comma-separated web origins. Mobile apps do not need CORS.                                       |
-| `PORT`                      | no              | Default `3333`.                                                                                  |
-| `NODE_ENV`                  | no              | `production` in deployed environments.                                                           |
-| `EXPO_ACCESS_TOKEN`         | no              | Only if enhanced push security is enabled on Expo.                                               |
-| `RESEND_API_KEY`            | no              | Without it, report emails are logged instead of sent.                                            |
-| `ADMIN_EMAIL`               | no              | Where reports are emailed. Sent from `alerts@gigmap.ch`, which must be a verified Resend domain. |
+| Variable              | Required        | Notes                                                                                            |
+| --------------------- | --------------- | ------------------------------------------------------------------------------------------------ |
+| `DATABASE_URL`        | yes             | Pooled, transaction mode (port 6543) with `pgbouncer=true`. See pool sizing below.               |
+| `DIRECT_URL`          | migrations only | Session mode (port 5432). Not read by the running API.                                           |
+| `SUPABASE_URL`        | yes             | `https://<ref>.supabase.co`. Token issuer, JWKS location, and the allowed origin for photo URLs. |
+| `SUPABASE_JWT_SECRET` | legacy only     | Set only on projects still signing with the shared HS256 secret; otherwise JWKS is used.         |
+| `CORS_ORIGINS`        | no              | Comma-separated web origins. Mobile apps do not need CORS.                                       |
+| `PORT`                | no              | Default `3333`.                                                                                  |
+| `NODE_ENV`            | no              | `production` in deployed environments.                                                           |
+| `EXPO_ACCESS_TOKEN`   | no              | Only if enhanced push security is enabled on Expo.                                               |
+| `RESEND_API_KEY`      | no              | Without it, report emails are logged instead of sent.                                            |
+| `ADMIN_EMAIL`         | no              | Where reports are emailed. Sent from `alerts@gigmap.ch`, which must be a verified Resend domain. |
 
-¹ Required by validation today even though no code path reads it. Supply it,
-but treat it as a secret.
+The API needs neither the anon key nor the service-role key. Do not give it
+the service-role key: it bypasses every access control in the project.
 
 ### Database pool sizing
 
