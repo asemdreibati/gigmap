@@ -47,6 +47,8 @@ RUN CI=true pnpm install --frozen-lockfile --prod --ignore-scripts \
 FROM base AS runtime
 ENV NODE_ENV=production
 ENV PORT=3333
+# Stack traces in logs point at the TypeScript source, not compiled JS.
+ENV NODE_OPTIONS=--enable-source-maps
 
 COPY --from=build --chown=node:node /repo/node_modules node_modules
 COPY --from=build --chown=node:node /repo/packages/shared/package.json packages/shared/
