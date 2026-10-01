@@ -104,6 +104,35 @@ describe('PushService', () => {
     expect(fetchReceipts).toHaveBeenCalledTimes(2);
   });
 
+  it('lets sends under way finish on shutdown', async () => {
+    let release!: () => void;
+    send.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () =>
+            resolve([
+              { status: 'ok', id: 'late' },
+              { status: 'ok', id: 'late-2' },
+            ]);
+        }),
+    );
+
+    const sending = sendOne();
+    // Let the token lookup resolve so the send is waiting on Expo.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    let flushed = false;
+    const shutdown = push.onApplicationShutdown().then(() => (flushed = true));
+    await Promise.resolve();
+    expect(flushed).toBe(false);
+
+    release();
+    await sending;
+    await shutdown;
+    expect(flushed).toBe(true);
+  });
+
   it('never throws, even when Expo is down', async () => {
     send.mockRejectedValueOnce(new Error('503'));
 

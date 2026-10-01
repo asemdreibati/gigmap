@@ -4,13 +4,13 @@ import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
-import { HealthController } from './health.controller';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RolesGuard } from './common/guards/roles.guard';
 import { SupabaseAuthGuard } from './common/guards/supabase-auth.guard';
 import { validateEnv } from './config/env';
 import { throttlerOptions } from './config/rate-limits';
 import { ApplicationsModule } from './modules/applications/applications.module';
+import { HealthModule } from './modules/health/health.module';
 import { JobsModule } from './modules/jobs/jobs.module';
 import { MaintenanceModule } from './modules/maintenance/maintenance.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -29,6 +29,7 @@ import { UsersModule } from './modules/users/users.module';
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot(throttlerOptions),
     PrismaModule,
+    HealthModule,
     NotificationsModule,
     UsersModule,
     JobsModule,
@@ -37,7 +38,6 @@ import { UsersModule } from './modules/users/users.module';
     ReportsModule,
     MaintenanceModule,
   ],
-  controllers: [HealthController],
   providers: [
     // Order matters: authentication resolves the user that RolesGuard and
     // the per-user rate limit read.

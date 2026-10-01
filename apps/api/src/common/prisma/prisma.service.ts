@@ -1,8 +1,8 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { type Prisma, PrismaClient } from '@prisma/client';
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+export class PrismaService extends PrismaClient implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(PrismaService.name);
 
   constructor() {
@@ -16,7 +16,12 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     this.logger.log('Connected to Postgres');
   }
 
-  async onModuleDestroy(): Promise<void> {
+  /**
+   * Not `onModuleDestroy`: Nest runs that before the HTTP server closes, which
+   * would pull the connection pool out from under requests still in flight
+   * during a rolling deploy. By this hook the server has drained.
+   */
+  async onApplicationShutdown(): Promise<void> {
     await this.$disconnect();
   }
 }

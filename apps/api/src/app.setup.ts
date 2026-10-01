@@ -18,7 +18,7 @@ export function configureApp(app: INestApplication): void {
     origin: config.get('CORS_ORIGINS', { infer: true }),
     credentials: true,
   });
-  app.setGlobalPrefix('v1', { exclude: ['health'] });
+  app.setGlobalPrefix('v1', { exclude: ['health', 'health/live', 'health/ready'] });
   app.useGlobalFilters(new HttpExceptionFilter());
   // No global ValidationPipe: every payload is validated by a Zod schema from
   // @gigmap/shared, and path params use ParseUUIDPipe. Registering one here

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, type OnApplicationShutdown } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import {
@@ -7,6 +7,7 @@ import {
   type ExpoPushReceipt,
   type ExpoPushTicket,
 } from 'expo-server-sdk';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import type { Env } from '../../config/env';
@@ -24,6 +25,8 @@ export const RECEIPT_DELAY_MS = 15 * 60 * 1000;
 export const RECEIPT_TTL_MS = 24 * 60 * 60 * 1000;
 /** Bounds memory if Expo is unreachable for a long stretch. */
 export const MAX_PENDING_RECEIPTS = 10_000;
+/** How long shutdown waits for sends already under way. */
+export const SHUTDOWN_FLUSH_TIMEOUT_MS = 5_000;
 
 interface PendingReceipt {
   token: string;
@@ -31,7 +34,7 @@ interface PendingReceipt {
 }
 
 @Injectable()
-export class PushService {
+export class PushService implements OnApplicationShutdown {
   private readonly logger = new Logger(PushService.name);
   private readonly expo: Expo;
   /**
@@ -40,6 +43,8 @@ export class PushService {
    * until the next push to it. See ADR 0008.
    */
   private readonly pendingReceipts = new Map<string, PendingReceipt>();
+  /** Sends under way, so shutdown can let them finish. */
+  private readonly inFlight = new Set<Promise<void>>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -52,7 +57,31 @@ export class PushService {
    * Fire-and-forget: a failed push must never fail the request that triggered
    * it. Callers invoke this with `void` and errors are swallowed after logging.
    */
-  async sendToUser(userId: string, payload: PushPayload): Promise<void> {
+  sendToUser(userId: string, payload: PushPayload): Promise<void> {
+    const send = this.deliver(userId, payload).finally(() => this.inFlight.delete(send));
+    this.inFlight.add(send);
+    return send;
+  }
+
+  /**
+   * Runs after the HTTP server has drained, so no new sends can start. A
+   * notification triggered by the last requests of a rolling deploy still
+   * goes out instead of dying with the container.
+   */
+  async onApplicationShutdown(): Promise<void> {
+    if (this.inFlight.size === 0) {
+      return;
+    }
+
+    const timeout = new AbortController();
+    await Promise.race([
+      Promise.allSettled(this.inFlight),
+      sleep(SHUTDOWN_FLUSH_TIMEOUT_MS, undefined, { signal: timeout.signal }).catch(() => {}),
+    ]);
+    timeout.abort();
+  }
+
+  private async deliver(userId: string, payload: PushPayload): Promise<void> {
     try {
       const tokens = await this.prisma.pushToken.findMany({
         where: { userId },

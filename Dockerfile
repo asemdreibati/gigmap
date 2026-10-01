@@ -58,7 +58,9 @@ COPY --from=build --chown=node:node /repo/apps/api/dist apps/api/dist
 
 USER node
 EXPOSE 3333
+# Liveness only: a database outage must not get containers restarted.
+# Orchestrators should route on GET /health/ready (see docs/deployment.md).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:' + process.env.PORT + '/health').then(r => r.json()).then(b => process.exit(b.status === 'ok' ? 0 : 1)).catch(() => process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:' + process.env.PORT + '/health/live').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
 
 CMD ["node", "apps/api/dist/main.js"]

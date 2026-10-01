@@ -1,4 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { SignJWT } from 'jose';
 import { randomUUID } from 'node:crypto';
@@ -9,6 +10,8 @@ import type { Job, UserRole } from '@gigmap/shared';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/app.setup';
 import { PrismaService } from '../../src/common/prisma/prisma.service';
+import type { Env } from '../../src/config/env';
+import { LifecycleService } from '../../src/modules/health/lifecycle.service';
 import { PushService } from '../../src/modules/notifications/push.service';
 import { TEST_JWT_SECRET, TEST_SUPABASE_URL } from './env';
 import { FakePushService } from './fake-push.service';
@@ -38,13 +41,27 @@ export interface AuthedRequests {
   delete(url: string): request.Test;
 }
 
-export async function createTestApp(): Promise<TestContext> {
+export interface TestAppOptions {
+  /** Overrides SHUTDOWN_DRAIN_MS for this app only. */
+  shutdownDrainMs?: number;
+}
+
+export async function createTestApp(options: TestAppOptions = {}): Promise<TestContext> {
   const push = new FakePushService();
 
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+  let builder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(PushService)
-    .useValue(push)
-    .compile();
+    .useValue(push);
+
+  if (options.shutdownDrainMs !== undefined) {
+    const drainMs = options.shutdownDrainMs;
+    builder = builder.overrideProvider(LifecycleService).useFactory({
+      factory: () =>
+        new LifecycleService({ get: () => drainMs } as unknown as ConfigService<Env, true>),
+    });
+  }
+
+  const moduleRef = await builder.compile();
 
   const app = moduleRef.createNestApplication<INestApplication<App>>({ logger: ['error'] });
   configureApp(app);

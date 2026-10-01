@@ -7,6 +7,13 @@ import { z } from 'zod';
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().default(3333),
+  /**
+   * How long to keep serving after SIGTERM with readiness failing, so the
+   * load balancer stops routing here before the server closes. 0 suits
+   * platforms that stop routing before signalling (Cloud Run); Kubernetes
+   * needs a few seconds. See ADR 0012.
+   */
+  SHUTDOWN_DRAIN_MS: z.coerce.number().int().min(0).max(60_000).default(0),
   CORS_ORIGINS: z
     .string()
     .default('http://localhost:3000')
