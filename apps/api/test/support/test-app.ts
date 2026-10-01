@@ -1,5 +1,5 @@
-import type { INestApplication } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { SignJWT } from 'jose';
 import { randomUUID } from 'node:crypto';
@@ -24,7 +24,7 @@ export interface Actor {
 }
 
 export interface TestContext {
-  app: INestApplication<App>;
+  app: NestExpressApplication;
   prisma: PrismaService;
   push: FakePushService;
   /** Requests as the given actor. */
@@ -63,11 +63,11 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestC
 
   const moduleRef = await builder.compile();
 
-  const app = moduleRef.createNestApplication<INestApplication<App>>({ logger: ['error'] });
+  const app = moduleRef.createNestApplication<NestExpressApplication>({ logger: ['error'] });
   configureApp(app);
   await app.init();
 
-  const server = app.getHttpServer();
+  const server = app.getHttpServer() as App;
   const prisma = app.get(PrismaService);
 
   const as = (actor: Actor): AuthedRequests => {

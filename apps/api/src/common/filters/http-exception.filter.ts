@@ -10,6 +10,8 @@ import type { Request, Response } from 'express';
 
 import type { ApiError } from '@gigmap/shared';
 
+import type { RequestWithId } from '../http/request-logging';
+
 /**
  * Normalises every error into the `ApiError` shape the clients expect, and
  * makes sure an unhandled exception never leaks a stack trace or a database
@@ -27,8 +29,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const body = this.toApiError(exception);
 
     if (body.statusCode >= 500) {
+      const requestId = (request as Partial<RequestWithId>).id ?? 'unknown';
       this.logger.error(
-        `${request.method} ${request.url} -> ${body.statusCode}`,
+        `${request.method} ${request.path} -> ${body.statusCode} [request ${requestId}]`,
         exception instanceof Error ? exception.stack : String(exception),
       );
     }

@@ -25,6 +25,18 @@ describe('Authentication and onboarding', () => {
     await ctx.anonymous().get('/health').expect(200, { status: 'ok', database: 'up' });
   });
 
+  it('tags responses with a request id, reusing a well-formed upstream one', async () => {
+    const generated = await ctx.anonymous().get('/v1/users/me').expect(401);
+    expect(generated.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/);
+
+    const upstream = await ctx
+      .anonymous()
+      .get('/v1/users/me')
+      .set('X-Request-Id', 'lb-trace-0001')
+      .expect(401);
+    expect(upstream.headers['x-request-id']).toBe('lb-trace-0001');
+  });
+
   it('rejects requests without a bearer token', async () => {
     await ctx.anonymous().get('/v1/users/me').expect(401);
   });

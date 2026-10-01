@@ -1,8 +1,9 @@
-import type { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { requestLogging } from './common/http/request-logging';
 import type { Env } from './config/env';
 
 /**
@@ -10,9 +11,15 @@ import type { Env } from './config/env';
  * end-to-end tests so they exercise the same prefix, filters and middleware
  * as production rather than a lookalike.
  */
-export function configureApp(app: INestApplication): void {
+export function configureApp(app: NestExpressApplication): void {
   const config = app.get(ConfigService<Env, true>);
 
+  const proxyHops = config.get('TRUST_PROXY_HOPS', { infer: true });
+  if (proxyHops > 0) {
+    app.set('trust proxy', proxyHops);
+  }
+
+  app.use(requestLogging());
   app.use(helmet());
   app.enableCors({
     origin: config.get('CORS_ORIGINS', { infer: true }),
