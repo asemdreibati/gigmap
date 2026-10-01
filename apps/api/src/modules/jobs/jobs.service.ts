@@ -181,7 +181,13 @@ export class JobsService {
         where: { id },
         data: {
           ...input,
-          ...(input.startTime ? { expiresAt: postingExpiry(job.createdAt, input.startTime) } : {}),
+          ...(input.startTime
+            ? {
+                expiresAt: postingExpiry(job.createdAt, input.startTime),
+                // A new expiry deserves its own reminder.
+                expiryReminderSentAt: null,
+              }
+            : {}),
           ...(fills ? { status: 'filled' as const } : {}),
         },
       });

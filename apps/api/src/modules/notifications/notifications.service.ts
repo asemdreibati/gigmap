@@ -75,8 +75,8 @@ export class NotificationsService {
 
   jobExpiringSoon(employerId: string, jobId: string, jobTitle: string): void {
     void this.push.sendToUser(employerId, {
-      title: 'Your job expires tomorrow',
-      body: `${jobTitle} will stop appearing on the map in 24 hours`,
+      title: 'Your job expires soon',
+      body: `${jobTitle} will stop appearing on the map within a day`,
       data: { type: 'job.expiring', jobId },
     });
   }

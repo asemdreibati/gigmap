@@ -6,12 +6,16 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { rejectPendingApplications } from '../applications/application-closure';
 import { NotificationsService } from '../notifications/notifications.service';
 
+/** How far ahead of `expires_at` an employer is reminded. */
+const EXPIRY_REMINDER_WINDOW = '24 hours';
+
 /**
  * Scheduled work that used to need pg_cron. Running it in-process keeps it in
  * the same language and test suite as the rest of the business logic.
  *
- * Note: if this API is ever scaled past one instance, these jobs need a lock
- * (or a dedicated worker process) so they do not run concurrently.
+ * Every instance runs these. Each job is written so concurrent runs are
+ * harmless: they claim rows with a single UPDATE, so work is never done
+ * twice (ADR 0013).
  */
 @Injectable()
 export class MaintenanceService {
@@ -56,25 +60,32 @@ export class MaintenanceService {
   }
 
   /**
-   * Runs once a day, so a job can only fall inside the 24h window on a single
-   * run — no need to track which reminders have already gone out.
+   * Reminds employers about open jobs leaving the map within a day.
+   *
+   * Each job is claimed by setting `expiry_reminder_sent_at` in the same
+   * statement that selects it, so a reminder goes out exactly once no matter
+   * how many instances run this at the same moment — the row locks make the
+   * second instance's UPDATE skip what the first claimed. Running hourly
+   * through the day (never at night) also catches up after a missed run.
    */
-  @Cron('0 9 * * *', { timeZone: DEFAULT_TIMEZONE })
+  @Cron('0 9-20 * * *', { timeZone: DEFAULT_TIMEZONE })
   async notifyExpiringJobs(): Promise<void> {
-    const now = new Date();
-    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const due = await this.prisma.$queryRaw<{ id: string; title: string; employerId: string }[]>`
+      UPDATE "jobs"
+      SET "expiry_reminder_sent_at" = NOW()
+      WHERE "status" = 'open'
+        AND "expiry_reminder_sent_at" IS NULL
+        AND "expires_at" > NOW()
+        AND "expires_at" <= NOW() + ${EXPIRY_REMINDER_WINDOW}::interval
+      RETURNING "id", "title", "employer_id" AS "employerId"
+    `;
 
-    const jobs = await this.prisma.job.findMany({
-      where: { status: 'open', expiresAt: { gt: now, lte: tomorrow } },
-      select: { id: true, title: true, employerId: true },
-    });
-
-    for (const job of jobs) {
+    for (const job of due) {
       this.notifications.jobExpiringSoon(job.employerId, job.id, job.title);
     }
 
-    if (jobs.length > 0) {
-      this.logger.log(`Sent ${jobs.length} expiry reminder(s)`);
+    if (due.length > 0) {
+      this.logger.log(`Sent ${due.length} expiry reminder(s)`);
     }
   }
 }

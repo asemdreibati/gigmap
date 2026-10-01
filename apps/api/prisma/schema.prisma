@@ -116,27 +116,29 @@ model EmployerProfile {
 }
 
 model Job {
-  id            String                                 @id @default(uuid()) @db.Uuid
-  employerId    String                                 @map("employer_id") @db.Uuid
-  title         String
-  description   String
-  category      JobCategory
-  payAmount     Decimal                                @map("pay_amount") @db.Decimal(10, 2)
-  payType       PayType                                @map("pay_type")
-  slots         Int                                    @default(1)
+  id                   String                                 @id @default(uuid()) @db.Uuid
+  employerId           String                                 @map("employer_id") @db.Uuid
+  title                String
+  description          String
+  category             JobCategory
+  payAmount            Decimal                                @map("pay_amount") @db.Decimal(10, 2)
+  payType              PayType                                @map("pay_type")
+  slots                Int                                    @default(1)
   /// Accepted applications so far. Kept in step with `applications` inside the
   /// accept transaction — never derive it client-side.
-  filledSlots   Int                                    @default(0) @map("filled_slots")
-  latitude      Float
-  longitude     Float
+  filledSlots          Int                                    @default(0) @map("filled_slots")
+  latitude             Float
+  longitude            Float
   /// Derived from latitude/longitude by trigger. Not readable via Prisma Client.
-  location      Unsupported("geography(Point, 4326)")?
-  address       String
-  startTime     DateTime                               @map("start_time") @db.Timestamptz(6)
-  durationHours Decimal?                               @map("duration_hours") @db.Decimal(4, 1)
-  status        JobStatus                              @default(open)
-  createdAt     DateTime                               @default(now()) @map("created_at") @db.Timestamptz(6)
-  expiresAt     DateTime                               @map("expires_at") @db.Timestamptz(6)
+  location             Unsupported("geography(Point, 4326)")?
+  address              String
+  startTime            DateTime                               @map("start_time") @db.Timestamptz(6)
+  durationHours        Decimal?                               @map("duration_hours") @db.Decimal(4, 1)
+  status               JobStatus                              @default(open)
+  createdAt            DateTime                               @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt            DateTime                               @map("expires_at") @db.Timestamptz(6)
+  /// Set when the "expires soon" push is claimed; cleared when expires_at moves.
+  expiryReminderSentAt DateTime?                              @map("expiry_reminder_sent_at") @db.Timestamptz(6)
 
   employer     User          @relation("EmployerJobs", fields: [employerId], references: [id], onDelete: Cascade)
   applications Application[]
