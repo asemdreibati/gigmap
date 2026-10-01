@@ -10,7 +10,8 @@ import type { AuthenticatedUser } from '../common/guards/authenticated-user';
  *
  * Unauthenticated floods are rejected by token verification before any
  * database work, and belong to the edge (load balancer / WAF) anyway.
- * See ADR 0009.
+ * Counters are shared across instances through Redis when configured.
+ * See ADRs 0009 and 0014.
  */
 export const RATE_LIMITS = {
   /** Any authenticated route. Generous: the map refetches as users pan. */
@@ -23,6 +24,7 @@ export const RATE_LIMITS = {
   apply: { limit: 60, ttl: minutes(60) },
 } as const;
 
+/** Everything but the storage, which is injected (see RateLimitStorage). */
 export const throttlerOptions: ThrottlerModuleOptions = {
   throttlers: [{ name: 'default', ...RATE_LIMITS.default }],
   errorMessage: 'Too many requests. Please wait a moment and try again.',

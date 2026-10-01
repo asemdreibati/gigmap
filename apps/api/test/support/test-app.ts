@@ -10,6 +10,7 @@ import type { Job, UserRole } from '@gigmap/shared';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/app.setup';
 import { PrismaService } from '../../src/common/prisma/prisma.service';
+import { REDIS, createRedisClient } from '../../src/common/redis/redis.module';
 import type { Env } from '../../src/config/env';
 import { LifecycleService } from '../../src/modules/health/lifecycle.service';
 import { PushService } from '../../src/modules/notifications/push.service';
@@ -44,6 +45,8 @@ export interface AuthedRequests {
 export interface TestAppOptions {
   /** Overrides SHUTDOWN_DRAIN_MS for this app only. */
   shutdownDrainMs?: number;
+  /** Connects this app to Redis, as REDIS_URL would. */
+  redisUrl?: string;
 }
 
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestContext> {
@@ -59,6 +62,11 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestC
       factory: () =>
         new LifecycleService({ get: () => drainMs } as unknown as ConfigService<Env, true>),
     });
+  }
+
+  if (options.redisUrl !== undefined) {
+    const url = options.redisUrl;
+    builder = builder.overrideProvider(REDIS).useFactory({ factory: () => createRedisClient(url) });
   }
 
   const moduleRef = await builder.compile();

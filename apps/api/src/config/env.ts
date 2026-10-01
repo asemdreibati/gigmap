@@ -45,6 +45,12 @@ export const envSchema = z
      */
     SUPABASE_JWT_SECRET: z.string().optional(),
 
+    /**
+     * Shared state for running more than one instance: rate-limit counters.
+     * Optional; without it each instance counts on its own. ADR 0014.
+     */
+    REDIS_URL: z.string().url().optional(),
+
     EXPO_ACCESS_TOKEN: z.string().optional(),
 
     RESEND_API_KEY: z.string().optional(),

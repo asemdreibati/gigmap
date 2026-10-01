@@ -52,9 +52,81 @@ describe('Rate limits', () => {
     await report(await signUp(ctx, 'worker')).expect(201);
   });
 
-  it('never throttles the health check', async () => {
+  it('never throttles the health checks', async () => {
     for (let i = 0; i < RATE_LIMITS.default.limit + 5; i++) {
-      await ctx.anonymous().get('/health').expect(200);
+      await ctx.anonymous().get('/health/live').expect(200);
     }
+  });
+});
+
+/** Requires TEST_REDIS_URL; CI provides it. See ADR 0014. */
+const withRedis = process.env['TEST_REDIS_URL'] ? describe : describe.skip;
+
+withRedis('Rate limits across instances', () => {
+  let a: TestContext;
+  let b: TestContext;
+  let jobId: string;
+
+  beforeAll(async () => {
+    const redisUrl = process.env['TEST_REDIS_URL']!;
+    [a, b] = await Promise.all([createTestApp({ redisUrl }), createTestApp({ redisUrl })]);
+  });
+
+  beforeEach(async () => {
+    await resetDatabase(a.prisma);
+    jobId = (await postJob(a, await signUp(a, 'employer'))).id;
+  });
+
+  afterAll(() => Promise.all([a.close(), b.close()]));
+
+  const report = (ctx: TestContext, actor: Actor) =>
+    ctx
+      .as(actor)
+      .post('/v1/reports')
+      .send({ targetType: 'job', targetId: jobId, reason: 'Looks like a scam to me' });
+
+  it('shares one budget per user between instances', async () => {
+    const worker = await signUp(a, 'worker');
+    const half = RATE_LIMITS.reports.limit / 2;
+
+    for (let i = 0; i < half; i++) {
+      await report(a, worker).expect(201);
+      await report(b, worker).expect(201);
+    }
+
+    // Each instance has seen only half the limit, but the user has spent it all.
+    await report(a, worker).expect(429);
+    await report(b, worker).expect(429);
+  });
+});
+
+describe('Rate limits when Redis is down', () => {
+  let ctx: TestContext;
+  let jobId: string;
+
+  beforeAll(async () => {
+    // Nothing listens on port 1.
+    ctx = await createTestApp({ redisUrl: 'redis://127.0.0.1:1' });
+  });
+
+  beforeEach(async () => {
+    await resetDatabase(ctx.prisma);
+    jobId = (await postJob(ctx, await signUp(ctx, 'employer'))).id;
+  });
+
+  afterAll(() => ctx.close());
+
+  it('keeps serving and falls back to per-instance limits', async () => {
+    const worker = await signUp(ctx, 'worker');
+    const report = () =>
+      ctx
+        .as(worker)
+        .post('/v1/reports')
+        .send({ targetType: 'job', targetId: jobId, reason: 'Looks like a scam to me' });
+
+    for (let i = 0; i < RATE_LIMITS.reports.limit; i++) {
+      await report().expect(201);
+    }
+    await report().expect(429);
   });
 });

@@ -5,9 +5,12 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 import { PrismaModule } from './common/prisma/prisma.module';
+import { RedisModule } from './common/redis/redis.module';
 import { RolesGuard } from './common/guards/roles.guard';
 import { SupabaseAuthGuard } from './common/guards/supabase-auth.guard';
 import { validateEnv } from './config/env';
+import { RateLimitModule } from './config/rate-limit.module';
+import { RateLimitStorage } from './config/rate-limit-storage';
 import { throttlerOptions } from './config/rate-limits';
 import { ApplicationsModule } from './modules/applications/applications.module';
 import { HealthModule } from './modules/health/health.module';
@@ -27,7 +30,12 @@ import { UsersModule } from './modules/users/users.module';
       validate: validateEnv,
     }),
     ScheduleModule.forRoot(),
-    ThrottlerModule.forRoot(throttlerOptions),
+    RedisModule,
+    ThrottlerModule.forRootAsync({
+      imports: [RateLimitModule],
+      inject: [RateLimitStorage],
+      useFactory: (storage: RateLimitStorage) => ({ ...throttlerOptions, storage }),
+    }),
     PrismaModule,
     HealthModule,
     NotificationsModule,
