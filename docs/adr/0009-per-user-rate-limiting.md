@@ -1,6 +1,6 @@
 # 0009. Per-user rate limiting in the API
 
-- **Status:** Accepted
+- **Status:** Superseded by [0014](0014-shared-rate-limits-in-redis.md)
 - **Date:** 2026-09-28
 
 ## Context

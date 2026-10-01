@@ -87,7 +87,7 @@ pnpm --filter @gigmap/api dev
 ```bash
 pnpm lint && pnpm typecheck && pnpm format:check
 pnpm test                 # unit tests
-pnpm test:e2e             # end-to-end, needs TEST_DATABASE_URL — see docs/testing.md
+pnpm test:e2e             # end-to-end, needs TEST_DATABASE_URL (and TEST_REDIS_URL) — see docs/testing.md
 ```
 
 CI runs all of these plus a Prisma schema/migration drift check on every pull
@@ -136,7 +136,8 @@ optional one (`phone`, `bio`, `photoUrl`, `companyName`, `website`,
 
 Requests are rate-limited per user (120/min overall; reports, job posts and
 applications have tighter hourly budgets). Over the limit, the API returns
-`429` with `Retry-After`. See [ADR 0009](docs/adr/0009-per-user-rate-limiting.md).
+`429` with `Retry-After`. Counters are shared across instances through Redis
+when `REDIS_URL` is set. See [ADR 0014](docs/adr/0014-shared-rate-limits-in-redis.md).
 
 ---
 
@@ -215,12 +216,21 @@ public URL. The API rejects `photoUrl`s anywhere else
 ### Scheduled work
 
 `@nestjs/schedule` replaces what would have been pg_cron: an hourly expiry
-sweep, a daily 09:00 Europe/Zurich reminder for jobs expiring within 24h, and a
-10-minute Expo push-receipt check that prunes dead device tokens. They run
-in-process, as do the rate-limit counters. **If the API is ever scaled past
-one instance, read the scale-out section of
-[docs/deployment.md](docs/deployment.md#running-more-than-one-instance)
-first.**
+sweep, an hourly (09:00–20:00 Europe/Zurich) reminder for jobs leaving the map
+within a day, and a 10-minute Expo push-receipt check that prunes dead device
+tokens. Every instance runs them; each job claims its rows in one `UPDATE`, so
+nothing is ever done twice
+([ADR 0013](docs/adr/0013-scheduled-jobs-safe-on-every-instance.md)).
+
+### Running in the cloud
+
+The API runs as stateless, disposable containers: `/health/live` and
+`/health/ready` probes, a graceful drain on SIGTERM, JSON logs with request
+ids, and Redis for rate-limit counters shared across instances
+([ADR 0012](docs/adr/0012-run-as-stateless-containers.md)). CI builds,
+smoke-tests and publishes the image to GHCR from `main`; Kubernetes reference
+manifests are in [deploy/k8s](deploy/k8s/README.md). Everything else is in
+[docs/deployment.md](docs/deployment.md).
 
 ---
 

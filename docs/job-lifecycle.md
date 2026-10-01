@@ -82,16 +82,16 @@ stateDiagram-v2
 
 ## Side effects at a glance
 
-| Event                                | Job                   | Applications                   | Pushes                                                       |
-| ------------------------------------ | --------------------- | ------------------------------ | ------------------------------------------------------------ |
-| Worker applies                       | —                     | new `pending`                  | employer: `application.created`                              |
-| Employer accepts                     | `filled` if last slot | pending → `rejected` if filled | worker: `application.accepted`; others: `application.closed` |
-| Employer rejects / withdraws         | may reopen            | —                              | worker: `application.rejected`                               |
-| Employer edits `slots` down to hired | `filled`              | pending → `rejected`           | `application.closed`                                         |
-| Employer marks filled                | `filled`              | pending → `rejected`           | `application.closed`                                         |
-| Employer cancels                     | `cancelled`           | pending → `rejected`           | pending: `application.closed`; hired: `job.cancelled`        |
-| Hourly sweep                         | `expired`             | pending → `rejected`           | `application.closed`                                         |
-| Daily 09:00 Zurich                   | —                     | —                              | employer: `job.expiring` for jobs expiring in 24 h           |
+| Event                                | Job                   | Applications                   | Pushes                                                                      |
+| ------------------------------------ | --------------------- | ------------------------------ | --------------------------------------------------------------------------- |
+| Worker applies                       | —                     | new `pending`                  | employer: `application.created`                                             |
+| Employer accepts                     | `filled` if last slot | pending → `rejected` if filled | worker: `application.accepted`; others: `application.closed`                |
+| Employer rejects / withdraws         | may reopen            | —                              | worker: `application.rejected`                                              |
+| Employer edits `slots` down to hired | `filled`              | pending → `rejected`           | `application.closed`                                                        |
+| Employer marks filled                | `filled`              | pending → `rejected`           | `application.closed`                                                        |
+| Employer cancels                     | `cancelled`           | pending → `rejected`           | pending: `application.closed`; hired: `job.cancelled`                       |
+| Hourly sweep                         | `expired`             | pending → `rejected`           | `application.closed`                                                        |
+| Hourly 09:00–20:00 Zurich            | —                     | —                              | employer: `job.expiring`, once per job, when it leaves the map within a day |
 
 Payloads are in [notifications.md](notifications.md).
 

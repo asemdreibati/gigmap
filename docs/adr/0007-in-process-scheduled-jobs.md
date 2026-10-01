@@ -1,6 +1,6 @@
 # 0007. Scheduled jobs run in-process
 
-- **Status:** Accepted (recorded retroactively)
+- **Status:** Superseded by [0013](0013-scheduled-jobs-safe-on-every-instance.md) (recorded retroactively)
 - **Date:** 2026-08-12
 
 ## Context

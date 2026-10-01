@@ -7,14 +7,14 @@ has committed, and are best-effort
 
 Every payload's `data` has a `type` and a `jobId` to deep-link to.
 
-| `type`                 | To       | When                                                        | Extra `data`                                   |
-| ---------------------- | -------- | ----------------------------------------------------------- | ---------------------------------------------- |
-| `application.created`  | employer | A worker applied to their job                               | —                                              |
-| `application.accepted` | worker   | The employer accepted them                                  | —                                              |
-| `application.rejected` | worker   | The employer rejected them, or withdrew an acceptance       | —                                              |
-| `application.closed`   | worker   | The job stopped hiring while they were still `pending`      | `reason`: `filled` \| `cancelled` \| `expired` |
-| `job.cancelled`        | worker   | A job they were hired for was cancelled                     | —                                              |
-| `job.expiring`         | employer | Daily at 09:00 Zurich, for their open jobs expiring in 24 h | —                                              |
+| `type`                 | To       | When                                                                                  | Extra `data`                                   |
+| ---------------------- | -------- | ------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `application.created`  | employer | A worker applied to their job                                                         | —                                              |
+| `application.accepted` | worker   | The employer accepted them                                                            | —                                              |
+| `application.rejected` | worker   | The employer rejected them, or withdrew an acceptance                                 | —                                              |
+| `application.closed`   | worker   | The job stopped hiring while they were still `pending`                                | `reason`: `filled` \| `cancelled` \| `expired` |
+| `job.cancelled`        | worker   | A job they were hired for was cancelled                                               | —                                              |
+| `job.expiring`         | employer | Once per job, at the first hourly run (09:00–20:00 Zurich) within a day of its expiry | —                                              |
 
 The wording lives in
 [`notifications.service.ts`](../apps/api/src/modules/notifications/notifications.service.ts).
