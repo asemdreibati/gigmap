@@ -1,0 +1,28 @@
+# GigMap API on Kubernetes. Reference base: apply as-is or point an overlay
+# at it. See deploy/k8s/README.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: gigmap-api
+      app.kubernetes.io/part-of: gigmap
+    includeSelectors: true
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - hpa.yaml
+  - pdb.yaml
+
+# Non-secret settings. The name gets a content hash, so changing a value
+# rolls the pods.
+configMapGenerator:
+  - name: gigmap-api-config
+    envs:
+      - config.env
+
+images:
+  - name: gigmap-api
+    newName: ghcr.io/asemdreibati/gigmap-api
+    newTag: latest # pin to a commit SHA tag for real deploys

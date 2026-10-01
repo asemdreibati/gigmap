@@ -1,0 +1,17 @@
+# The release step: apply pending migrations with the same image, before
+# rolling out the Deployment. See deploy/k8s/README.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: gigmap-api-migrate
+      app.kubernetes.io/part-of: gigmap
+
+resources:
+  - job.yaml
+
+images:
+  - name: gigmap-api
+    newName: ghcr.io/asemdreibati/gigmap-api
+    newTag: latest # must match the tag being rolled out
